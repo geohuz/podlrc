@@ -21,7 +21,23 @@ function removeOaldpeNoise(doc) {
 function formatOaldpeDefinition(doc, word) {
   removeOaldpeNoise(doc);
   var senses = Array.from(doc.querySelectorAll('li.sense'));
-  return senses.map(function(sense, index) {
+  if (senses.length === 0) return '';
+
+  var html = '';
+  var headword = dictionaryNodeText(
+    doc.querySelector('.webtop > .headword, .top-container .headword, h1.headword')
+  ) || word;
+  var pron = dictionaryNodeText(
+    doc.querySelector('.webtop > .phonetics, .top-container .phonetics')
+  );
+  if (headword || pron) {
+    html += '<div class="dict-head">';
+    if (headword) html += '<span class="dict-headword">' + esc(headword) + '</span>';
+    if (pron) html += '<span class="dict-pron">' + esc(pron) + '</span>';
+    html += '</div>';
+  }
+
+  html += senses.map(function(sense, index) {
     var numberNode = sense.querySelector('.iteration');
     var number = dictionaryNodeText(numberNode) ||
       sense.getAttribute('sensenum') || String(index + 1);
@@ -64,6 +80,7 @@ function formatOaldpeDefinition(doc, word) {
 
     return '<div class="dict-sense">' + main + examples + '</div>';
   }).join('');
+  return html;
 }
 
 var oaldpeAppleFormatter = {

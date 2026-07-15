@@ -712,6 +712,7 @@ const PlayerHtml = """
   /* ── saved words ── */
   var _savedWords = {};
   var _definitionRequests = {};
+  var _definitionHydrationRunning = false;
   var _pendingWordSaves = {};
 
   function wordKey(word) {
@@ -829,10 +830,29 @@ const PlayerHtml = """
     if (resolve) resolve(response.definition || '');
   }
 
+  function needsDefinitionHydration(entry) {
+    if (!entry.definition) return true;
+    return entry.source === 'macOS-normalized-html-v1:oaldpe-apple' &&
+      entry.definition.indexOf('class="dict-head"') < 0;
+  }
+
   function hydrateMissingDefinitions() {
-    Object.values(_savedWords).forEach(function(entry) {
+    if (_definitionHydrationRunning) return;
+    var entries = Object.values(_savedWords).filter(function(entry) {
+      return needsDefinitionHydration(entry) &&
+        !_definitionRequests[wordKey(entry.word)];
+    });
+    if (entries.length === 0) return;
+
+    _definitionHydrationRunning = true;
+    function hydrateNext(index) {
+      if (index >= entries.length) {
+        _definitionHydrationRunning = false;
+        hydrateMissingDefinitions();
+        return;
+      }
+      var entry = entries[index];
       var key = wordKey(entry.word);
-      if (entry.definition || _definitionRequests[key]) return;
       _definitionRequests[key] = true;
       requestDictionaryDefinition(entry.word).then(function(definition) {
         if (!definition) return;
@@ -845,8 +865,14 @@ const PlayerHtml = """
           file: entry.file,
           timeMs: entry.timeMs
         }));
+      }).then(function() {
+        hydrateNext(index + 1);
+      }, function() {
+        delete _definitionRequests[key];
+        hydrateNext(index + 1);
       });
-    });
+    }
+    hydrateNext(0);
   }
 
   function updateWordHighlights() {
