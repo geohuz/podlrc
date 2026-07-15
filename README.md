@@ -50,8 +50,9 @@ file.
 ### Vocabulary
 
 Click a word in the lyrics to look it up with macOS Dictionary and save it to
-**Vocabulary**. Clicking an already saved word looks it up again but does not
-remove it.
+**Vocabulary**. Clicking an already saved word opens the dictionary popup but
+does not save a duplicate. Click the same selected word again to close the
+popup.
 
 Vocabulary stores each word once. Saved words are highlighted with a blue
 background wherever they appear in the lyrics. Click the small **×** next to a
