@@ -3,6 +3,30 @@
 Minimal macOS podcast player with synced LRC lyrics and a built-in vocabulary
 book.
 
+## Installation
+
+1. Go to the project's **GitHub Releases** page.
+2. Download the latest macOS archive, for example:
+
+   ```text
+   podlrc-0.1.0-macos-arm64.zip
+   ```
+
+3. Extract the zip file.
+4. Run the `podlrc` binary:
+
+   ```sh
+   ./podlrc
+   ```
+
+The release binary is not codesigned. On first launch, macOS may block it. If
+that happens, either right-click `podlrc` and choose **Open**, or remove the
+quarantine attribute:
+
+```sh
+xattr -d com.apple.quarantine podlrc
+```
+
 ## Usage
 
 ### Open audio
@@ -114,6 +138,29 @@ nim c src/main.nim
 ```
 
 The build writes the app binary to `./podlrc` via `config.nims`.
+
+### Release archive
+
+Build a macOS release zip:
+
+```sh
+nimble release
+```
+
+This creates:
+
+```text
+dist/podlrc-<version>-macos-<arch>.zip
+dist/podlrc-<version>-macos-<arch>.zip.sha256
+```
+
+The zip contains the `podlrc` binary and `README.md`. The binary is not
+codesigned, so first-time users may need to right-click **Open** or remove the
+quarantine attribute:
+
+```sh
+xattr -d com.apple.quarantine podlrc
+```
 
 To compile the audio validation helper:
 
