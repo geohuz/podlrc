@@ -198,7 +198,7 @@ the returned HTML.
 Currently supported formatter handlers:
 
 - `noad` — New Oxford American Dictionary
-- `oaldpe-apple` — oaldpe-apple installed in Apple Dictionary
+- [`oaldpe-apple`](https://github.com/genzj/oaldpe-10th-apple) — oaldpe-apple installed in Apple Dictionary
 
 If no formatter matches, podlrc falls back to a plain text formatter.
 
