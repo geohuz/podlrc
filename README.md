@@ -1,8 +1,10 @@
 # podlrc
 
-podlrc is a tiny macOS player for podcasts, interviews, and language-learning
-audio with synced LRC lyrics. It is just a small zip, starts quickly, stays
-offline, and is ready to use without a heavy app bundle.
+podlrc is a tiny native macOS audio player that just works with external LRC lyrics.
+
+Put episode.mp3 and episode.lrc in the same folder, open the audio file, and your lyrics stay perfectly in sync. No import, no music library, no cloud, no subscription.
+
+Built for podcasts, interviews, audiobooks, and language learning.
 
 I built it because I wanted a lyric player that felt right on macOS and made
 listening practice easy.
@@ -232,17 +234,17 @@ Example formatter:
 
 ```js
 function formatMyDictionaryDefinition(doc, word) {
-  return formatPlainDictionaryDefinition('', word, doc);
+  return formatPlainDictionaryDefinition("", word, doc);
 }
 
 var myDictionaryFormatter = {
-  id: 'my-dictionary',
-  label: 'My Dictionary',
-  description: 'Short note for maintainers',
-  matches: function(doc) {
-    return !!doc.querySelector('your dictionary marker');
+  id: "my-dictionary",
+  label: "My Dictionary",
+  description: "Short note for maintainers",
+  matches: function (doc) {
+    return !!doc.querySelector("your dictionary marker");
   },
-  format: formatMyDictionaryDefinition
+  format: formatMyDictionaryDefinition,
 };
 ```
 
@@ -252,7 +254,7 @@ Then register it:
 var dictionaryFormatterRegistry = [
   noadFormatter,
   oaldpeAppleFormatter,
-  myDictionaryFormatter
+  myDictionaryFormatter,
 ];
 ```
 
