@@ -139,7 +139,7 @@ then enable it in Dictionary.app and move it to the top of the dictionary list.
 src/
   ui_assets.nim                    # embeds and assembles frontend assets
   ui/
-    index.html                     # player markup
+    index.html                     # player markup and native templates
     styles.css                     # player and vocabulary styles
     app.js                         # frontend state and interactions
   dictionary_formatters.js          # formatter registry and normalization entry
@@ -156,7 +156,14 @@ tools/
   verify_audio.nim                  # audio validation helper
 tests/
   tui_assets.nim                    # embedded frontend assembly checks
+docs/
+  ipc.md                            # frontend-host message protocol
 ```
+
+### Frontend-host IPC
+
+The WebView message format, commands, state payloads, and extension workflow are
+documented in [docs/ipc.md](docs/ipc.md).
 
 ### Build
 
@@ -232,7 +239,7 @@ registry id such as `noad` or `oaldpe-apple`.
    `my_dictionary.js`.
 2. Implement a formatter object with `id`, `label`, `description`, `matches`,
    and `format`.
-3. Add the file to `DictionaryFormattersJs` in `src/main.nim`, before
+3. Add the file to `DictionaryFormattersJs` in `src/ui_assets.nim`, before
    `dictionary_formatters.js`.
 4. Add the formatter object to `dictionaryFormatterRegistry` in
    `src/dictionary_formatters.js`.

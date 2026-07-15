@@ -26,6 +26,15 @@ function esc(s) {
   return d.innerHTML;
 }
 
+function cloneTemplate(id) {
+  var template = document.getElementById(id);
+  return template.content.cloneNode(true);
+}
+
+function cloneTemplateElement(id) {
+  return cloneTemplate(id).firstElementChild;
+}
+
 function podcastTitle(path) {
   if (!path) return 'Current';
   return path.split('/').pop().replace(/\.[^.]+$/i, '') || 'Current';
@@ -38,26 +47,25 @@ function renderRecentDropdown() {
   if (_recentFiles.length === 0) {
     btn.style.display = 'none';
     dd.classList.remove('open');
+    dd.replaceChildren();
     return;
   }
   btn.style.display = '';
-  var html = '<div class="rd-header">Recent Files</div>';
+  dd.replaceChildren(cloneTemplate('recent-dropdown-template'));
+  var items = dd.querySelector('.recent-items');
   _recentFiles.forEach(function(p, i) {
     var name = p.split('/').pop().replace(/\.mp3$/i, '');
     var dir = p.substring(0, p.lastIndexOf('/'));
-    html += '<div class="recent-item" data-idx="' + i + '">' +
-      '<span class="ri-name">' + esc(name) + '</span>' +
-      '<span class="ri-path">' + esc(dir) + '</span></div>';
-  });
-  dd.innerHTML = html;
-  dd.querySelectorAll('.recent-item').forEach(function(el) {
+    var el = cloneTemplateElement('recent-item-template');
+    el.querySelector('.ri-name').textContent = name;
+    el.querySelector('.ri-path').textContent = dir;
     el.onclick = function(e) {
       e.stopPropagation();
       clearWordPopup();
-      var idx = parseInt(this.getAttribute('data-idx'));
-      window.external.invoke(JSON.stringify({cmd: 'openRecent', path: _recentFiles[idx]}));
+      window.external.invoke(JSON.stringify({cmd: 'openRecent', path: _recentFiles[i]}));
       dd.classList.remove('open');
     };
+    items.appendChild(el);
   });
 }
 
@@ -116,6 +124,7 @@ function renderWordPanel() {
   if (allEntries.length === 0) {
     btn.style.display = 'none';
     panel.classList.remove('open');
+    panel.replaceChildren();
     return;
   }
   btn.style.display = '';
@@ -125,30 +134,37 @@ function renderWordPanel() {
   }
   entries.sort(function(a, b) { return a.word.localeCompare(b.word); });
   var title = podcastTitle(_currentFile);
-  var html = '<div class="wp-list">' +
-    '<div class="wp-header">' +
-      '<div class="rd-header">Vocabulary</div>' +
-      '<div class="wp-filter">' +
-        '<button type="button" class="' + (_wordFilter === 'current' ? 'active' : '') +
-          '" onclick="setWordFilter(event, &quot;current&quot;)" title="' + esc(title) + '">' + esc(title) + '</button>' +
-        '<button type="button" class="' + (_wordFilter === 'all' ? 'active' : '') +
-          '" onclick="setWordFilter(event, &quot;all&quot;)">All</button>' +
-      '</div>' +
-    '</div>';
-  if (entries.length === 0) {
-    html += '<div class="wp-empty">No saved words for this podcast.</div>';
-  }
+  var content = cloneTemplate('word-panel-template');
+  var currentButton = content.querySelector('[data-filter="current"]');
+  var allButton = content.querySelector('[data-filter="all"]');
+  var empty = content.querySelector('.wp-empty');
+  var items = content.querySelector('.wp-items');
+
+  currentButton.textContent = title;
+  currentButton.title = title;
+  currentButton.classList.toggle('active', _wordFilter === 'current');
+  allButton.classList.toggle('active', _wordFilter === 'all');
+  currentButton.onclick = function(event) { setWordFilter(event, 'current'); };
+  allButton.onclick = function(event) { setWordFilter(event, 'all'); };
+  empty.hidden = entries.length !== 0;
+
   entries.forEach(function(e) {
-    html += '<div class="wp-item" data-file="' + esc(e.file) + '" data-ms="' + e.timeMs + '">' +
-      '<span class="wp-toggle" title="Expand definition">▶</span>' +
-      '<span class="wp-word">' + esc(e.word) + '</span>' +
-      '<span class="wp-definition">' + (formatDictionaryDefinition(e.definition, e.word) || 'Looking up definition...') + '</span>' +
-      '<span class="wp-del" data-word="' + esc(e.word) + '" data-file="' + esc(e.file) + '" data-ms="' + e.timeMs + '">&times;</span>' +
-      '</div>';
-  });
-  html += '</div>';
-  panel.innerHTML = html;
-  panel.querySelectorAll('.wp-item').forEach(function(el) {
+    var el = cloneTemplateElement('word-item-template');
+    var definition = el.querySelector('.wp-definition');
+    var remove = el.querySelector('.wp-del');
+
+    el.dataset.file = e.file;
+    el.dataset.ms = String(e.timeMs);
+    el.querySelector('.wp-word').textContent = e.word;
+    var formattedDefinition = formatDictionaryDefinition(e.definition, e.word);
+    if (formattedDefinition) {
+      definition.innerHTML = formattedDefinition;
+    } else {
+      definition.textContent = 'Looking up definition...';
+    }
+    remove.dataset.word = e.word;
+    remove.title = 'Remove from Vocabulary';
+
     el.addEventListener('click', function(ev) {
       if (ev.target.classList.contains('wp-del')) return;
       if (ev.target.classList.contains('wp-toggle')) {
@@ -162,16 +178,16 @@ function renderWordPanel() {
       window.external.invoke(JSON.stringify({cmd: 'openWordRef', file: f, ms: ms}));
       panel.classList.remove('open');
     });
-  });
-  panel.querySelectorAll('.wp-del').forEach(function(el) {
-    el.addEventListener('click', function(ev) {
+    remove.addEventListener('click', function(ev) {
       ev.stopPropagation();
       window.external.invoke(JSON.stringify({
         cmd: 'removeWord',
-        word: el.getAttribute('data-word')
+        word: remove.dataset.word
       }));
     });
+    items.appendChild(el);
   });
+  panel.replaceChildren(content);
 }
 
 function setWordFilter(ev, filter) {
@@ -256,10 +272,7 @@ function updateWordHighlights() {
       el.classList.toggle('saved', saved);
       var remove = el.querySelector('.word-remove');
       if (saved && !remove) {
-        el.insertAdjacentHTML(
-          'beforeend',
-          '<span class="word-remove" title="Remove from Vocabulary">&times;</span>'
-        );
+        el.appendChild(cloneTemplateElement('word-remove-template'));
       } else if (!saved && remove) {
         remove.remove();
       }
@@ -281,31 +294,32 @@ function toggleWordPanel(e) {
 }
 
 /* ── word splitting ── */
-function buildWordSpans(text) {
-  var out = '';
+function buildWordNodes(text) {
+  var fragment = document.createDocumentFragment();
   var re = /([a-zA-Z0-9'\-]+)/g;
   var idx = 0, m;
   while ((m = re.exec(text)) !== null) {
-    out += esc(text.substring(idx, m.index));
-    out += '<span class="word" data-word="' + esc(m[1]) +
-      '" data-offset="' + m.index + '">' + esc(m[1]) + '</span>';
+    fragment.appendChild(document.createTextNode(text.substring(idx, m.index)));
+    var word = cloneTemplateElement('lyric-word-template');
+    word.dataset.word = m[1];
+    word.dataset.offset = String(m.index);
+    word.textContent = m[1];
+    fragment.appendChild(word);
     idx = m.index + m[1].length;
   }
-  out += esc(text.substring(idx));
-  return out;
+  fragment.appendChild(document.createTextNode(text.substring(idx)));
+  return fragment;
 }
 
 function renderLines(lines) {
   _lines = lines;
   _activeIdx = -1;
   var container = document.getElementById('lrc-container');
-  container.innerHTML = '';
+  var content = document.createDocumentFragment();
   lines.forEach(function(line, i) {
-    var div = document.createElement('div');
-    div.className = 'lrc-line';
-    div.innerHTML = '<span class="lrc-time">' +
-      fmtTime(line.timeStartMs) + '</span>' +
-      '<span class="lrc-text">' + buildWordSpans(line.text) + '</span>';
+    var div = cloneTemplateElement('lrc-line-template');
+    div.querySelector('.lrc-time').textContent = fmtTime(line.timeStartMs);
+    div.querySelector('.lrc-text').appendChild(buildWordNodes(line.text));
     div.querySelector('.lrc-time').onclick = function(e) {
       e.stopPropagation();
       window.external.invoke(JSON.stringify({cmd: 'seek', ms: line.timeStartMs}));
@@ -323,8 +337,9 @@ function renderLines(lines) {
         onWordClick(w, e);
       });
     });
-    container.appendChild(div);
+    content.appendChild(div);
   });
+  container.replaceChildren(content);
   updateWordHighlights();
 }
 
@@ -335,7 +350,11 @@ function showPopup(word, x, y) {
   popup.classList.add('visible');
   popup.style.left = x + 'px';
   popup.style.top = y + 'px';
-  popup.innerHTML = '<div class="dw">' + esc(word) + '</div><div class="dm">Looking up...</div>';
+  var content = cloneTemplate('dictionary-popup-template');
+  content.querySelector('.dw').textContent = word;
+  content.querySelector('.dd').hidden = true;
+  content.querySelector('.dm').textContent = 'Looking up...';
+  popup.replaceChildren(content);
 }
 
 function hidePopup() {
@@ -357,11 +376,19 @@ function lookupWord(word, context, offset) {
     var normalized = normalizeDictionaryDefinition(definition, word);
     var displayDefinition = normalized.definition;
     if (_visibleLookupWord === word) {
-      var content = displayDefinition
-        ? '<div class="dd">' + displayDefinition + '</div>'
-        : '<div class="dm">No definition found</div>';
-      document.getElementById('dict-popup').innerHTML =
-        '<div class="dw">' + esc(word) + '</div>' + content;
+      var popup = document.getElementById('dict-popup');
+      var definitionNode = popup.querySelector('.dd');
+      var messageNode = popup.querySelector('.dm');
+      if (displayDefinition) {
+        definitionNode.innerHTML = displayDefinition;
+        definitionNode.hidden = false;
+        messageNode.hidden = true;
+      } else {
+        definitionNode.replaceChildren();
+        definitionNode.hidden = true;
+        messageNode.textContent = 'No definition found';
+        messageNode.hidden = false;
+      }
     }
     return normalized;
   });
@@ -491,6 +518,12 @@ function updateProgressTrack(value) {
   bar.style.background = 'linear-gradient(to right, #777 0%, #777 ' + pct + '%, #404040 ' + pct + '%)';
 }
 
+function updateVolumeIcon(value) {
+  document.getElementById('vol-muted').style.display = value == 0 ? '' : 'none';
+  document.getElementById('vol-low').style.display = value == 0 ? 'none' : '';
+  document.getElementById('vol-high').style.display = value >= 30 ? '' : 'none';
+}
+
 function updateState(data) {
   if (data.loaded === false) return;
 
@@ -533,6 +566,7 @@ function updateState(data) {
       vb.value = vpct;
       vb.style.background = 'linear-gradient(to right, #999 0%, #999 ' + vpct + '%, #404040 ' + vpct + '%)';
     }
+    updateVolumeIcon(vpct);
   }
 
   if (data.duration !== undefined) _duration = data.duration;
@@ -602,14 +636,7 @@ volumeBar.oninput = function() {
   window.external.invoke(JSON.stringify({cmd: 'setVolume', vol: volumeBar.value / 100}));
   var pct = volumeBar.value;
   volumeBar.style.background = 'linear-gradient(to right, #999 0%, #999 ' + pct + '%, #404040 ' + pct + '%)';
-  var icon = document.getElementById('vol-icon');
-  if (pct == 0) {
-    icon.innerHTML = '<polygon points="11,5 6,9 2,9 2,15 6,15 11,19"/><line x1="23" y1="9" x2="17" y2="15" stroke="currentColor" stroke-width="2"/><line x1="17" y1="9" x2="23" y2="15" stroke="currentColor" stroke-width="2"/>';
-  } else if (pct < 30) {
-    icon.innerHTML = '<polygon points="11,5 6,9 2,9 2,15 6,15 11,19"/><path d="M15.54 8.46a5 5 0 010 7.07"/>';
-  } else {
-    icon.innerHTML = '<polygon points="11,5 6,9 2,9 2,15 6,15 11,19"/><path d="M15.54 8.46a5 5 0 010 7.07"/><path d="M19.07 4.93a10 10 0 010 14.14"/>';
-  }
+  updateVolumeIcon(pct);
 };
 
 var progressBar = document.getElementById('progress-bar');

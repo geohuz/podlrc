@@ -54,11 +54,75 @@
   </div>
   <div id="volume-container">
     <svg viewBox="0 0 24 24" fill="currentColor" id="vol-icon" width="16" height="16" style="flex-shrink:0;opacity:0.5;">
-      <polygon points="11,5 6,9 2,9 2,15 6,15 11,19"/><path d="M15.54 8.46a5 5 0 010 7.07"/><path d="M19.07 4.93a10 10 0 010 14.14"/>
+      <polygon points="11,5 6,9 2,9 2,15 6,15 11,19"/>
+      <g id="vol-low"><path d="M15.54 8.46a5 5 0 010 7.07"/></g>
+      <g id="vol-high"><path d="M19.07 4.93a10 10 0 010 14.14"/></g>
+      <g id="vol-muted" style="display:none">
+        <line x1="23" y1="9" x2="17" y2="15" stroke="currentColor" stroke-width="2"/>
+        <line x1="17" y1="9" x2="23" y2="15" stroke="currentColor" stroke-width="2"/>
+      </g>
     </svg>
     <input type="range" id="volume-bar" min="0" max="100" value="80">
   </div>
 </div>
+
+<template id="recent-dropdown-template">
+  <div class="rd-header">Recent Files</div>
+  <div class="recent-items"></div>
+</template>
+
+<template id="recent-item-template">
+  <div class="recent-item">
+    <span class="ri-name"></span>
+    <span class="ri-path"></span>
+  </div>
+</template>
+
+<template id="word-panel-template">
+  <div class="wp-list">
+    <div class="wp-header">
+      <div class="rd-header">Vocabulary</div>
+      <div class="wp-filter">
+        <button type="button" data-filter="current"></button>
+        <button type="button" data-filter="all">All</button>
+      </div>
+    </div>
+    <div class="wp-empty">No saved words for this podcast.</div>
+    <div class="wp-items"></div>
+  </div>
+</template>
+
+<template id="word-item-template">
+  <div class="wp-item">
+    <span class="wp-toggle" title="Expand definition">▶</span>
+    <span class="wp-word"></span>
+    <span class="wp-definition"></span>
+    <span class="wp-del">&times;</span>
+  </div>
+</template>
+
+<template id="word-remove-template">
+  <span class="word-remove" title="Remove from Vocabulary">&times;</span>
+</template>
+
+<template id="lrc-line-template">
+  <div class="lrc-line">
+    <span class="lrc-time"></span>
+    <span class="lrc-text"></span>
+  </div>
+</template>
+
+<template id="lyric-word-template">
+  <span class="word"></span>
+</template>
+
+<template id="dictionary-popup-template">
+  <div class="dict-popup-content">
+    <div class="dw"></div>
+    <div class="dd"></div>
+    <div class="dm"></div>
+  </div>
+</template>
 
 <script>
 /* PODLRC_APP */
