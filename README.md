@@ -125,6 +125,10 @@ After that, podlrc will receive that dictionary's result first when you click a
 word. For example, if you want New Oxford American Dictionary results, put that
 dictionary first. If you want `oaldpe-apple`, put `oaldpe-apple` first.
 
+`oaldpe-apple` is not bundled with podlrc. If you want to use it, install it
+separately from [genzj/oaldpe-10th-apple](https://github.com/genzj/oaldpe-10th-apple),
+then enable it in Dictionary.app and move it to the top of the dictionary list.
+
 ## Developer guide
 
 ### Project layout
