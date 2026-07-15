@@ -3,6 +3,12 @@
 Minimal macOS podcast player with synced LRC lyrics and a built-in vocabulary
 book.
 
+## Screenshots
+
+![podlrc player](assets/screenshot-player.png)
+
+![podlrc vocabulary](assets/screenshot-vocabulary.png)
+
 ## Installation
 
 1. Go to the project's **[GitHub Releases](https://github.com/geohuz/podlrc/releases)** page.
