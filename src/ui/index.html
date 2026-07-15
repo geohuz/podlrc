@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+/* PODLRC_STYLES */
+</style>
+</head>
+<body>
+
+<div id="title-bar">
+  <button id="btn-open">Open File</button>
+  <button id="btn-recent" style="display:none">Recent</button>
+  <button id="btn-words" style="display:none">Vocabulary</button>
+  <div id="recent-dropdown"></div>
+  <div id="word-panel"></div>
+  <span id="zoom-hint">Font: 100%</span>
+</div>
+
+<div id="empty-state">
+  <svg viewBox="0 0 24 24" fill="currentColor" opacity="0.35">
+    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"/>
+  </svg>
+  <div class="hint">Open an MP3 + LRC file to start</div>
+  <div id="empty-recent" style="margin-top:8px;font-size:13px;color:#444;"></div>
+</div>
+
+<div id="lrc-container" class="hidden"></div>
+
+<div id="dict-popup"></div>
+
+<div id="playbar" class="hidden">
+  <button class="btn-sm" title="Back 10s" id="btn-skip-back">
+    <svg viewBox="0 0 24 24" fill="currentColor">
+      <polygon points="13,6 7,12 13,18"/>
+      <polygon points="19,6 19,18 13,12" opacity="0.5"/>
+    </svg>
+  </button>
+  <button class="btn-lg" title="Play" id="btn-play">
+    <svg id="icon-play" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.14v14l11-7-11-7z"/></svg>
+    <svg id="icon-pause" viewBox="0 0 24 24" fill="currentColor" style="display:none"><rect x="6" y="4" width="4" height="16" rx="1.2"/><rect x="14" y="4" width="4" height="16" rx="1.2"/></svg>
+  </button>
+  <button class="btn-sm" title="Forward 10s" id="btn-skip-fwd">
+    <svg viewBox="0 0 24 24" fill="currentColor">
+      <polygon points="11,6 17,12 11,18"/>
+      <polygon points="5,6 5,18 11,12" opacity="0.5"/>
+    </svg>
+  </button>
+  <div id="progress-group">
+    <span class="time-label" id="time-current">00:00</span>
+    <input type="range" id="progress-bar" min="0" max="1000" value="0">
+    <span class="time-label" id="time-duration">00:00</span>
+  </div>
+  <div id="volume-container">
+    <svg viewBox="0 0 24 24" fill="currentColor" id="vol-icon" width="16" height="16" style="flex-shrink:0;opacity:0.5;">
+      <polygon points="11,5 6,9 2,9 2,15 6,15 11,19"/><path d="M15.54 8.46a5 5 0 010 7.07"/><path d="M19.07 4.93a10 10 0 010 14.14"/>
+    </svg>
+    <input type="range" id="volume-bar" min="0" max="100" value="80">
+  </div>
+</div>
+
+<script>
+/* PODLRC_APP */
+</script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  initApp(/* PODLRC_CONFIG */);
+});
+</script>
+</body>
+</html>

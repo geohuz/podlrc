@@ -137,6 +137,11 @@ then enable it in Dictionary.app and move it to the top of the dictionary list.
 
 ```text
 src/
+  ui_assets.nim                    # embeds and assembles frontend assets
+  ui/
+    index.html                     # player markup
+    styles.css                     # player and vocabulary styles
+    app.js                         # frontend state and interactions
   dictionary_formatters.js          # formatter registry and normalization entry
   dictionary_formatters/
     common.js                       # shared helpers and plain fallback
@@ -149,6 +154,8 @@ src/
     miniaudio.h                     # vendored miniaudio header
 tools/
   verify_audio.nim                  # audio validation helper
+tests/
+  tui_assets.nim                    # embedded frontend assembly checks
 ```
 
 ### Build
