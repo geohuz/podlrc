@@ -1,7 +1,15 @@
 # podlrc
 
-Minimal macOS podcast player with synced LRC lyrics and a built-in vocabulary
-book.
+podlrc is a tiny macOS player for podcasts, interviews, and language-learning
+audio with synced LRC lyrics. It is just a small zip, starts quickly, stays
+offline, and is ready to use without a heavy app bundle.
+
+I built it because I wanted a lyric player that felt right on macOS and made
+listening practice easy.
+
+It keeps the basics close at hand: MP3 playback, synced lyrics, seeking,
+recent files, playback-position restore, macOS Dictionary lookup, and a
+per-podcast vocabulary book.
 
 ## Screenshots
 
@@ -25,9 +33,9 @@ book.
    ./podlrc
    ```
 
-The release binary is not codesigned. On first launch, macOS may block it. If
-that happens, either right-click `podlrc` and choose **Open**, or remove the
-quarantine attribute:
+The release is a plain zip instead of a signed DMG. The binary is not
+codesigned, so on first launch macOS may block it. If that happens, either
+right-click `podlrc` and choose **Open**, or remove the quarantine attribute:
 
 ```sh
 xattr -d com.apple.quarantine podlrc
