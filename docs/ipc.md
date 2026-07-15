@@ -5,11 +5,16 @@ JSON messages directly; there is no HTTP server or WebSocket layer.
 
 ## Transport
 
-The frontend sends one JSON object at a time through the WebView bridge:
+The frontend sends one JSON object at a time through the centralized
+`sendCommand()` bridge:
 
 ```js
-window.external.invoke(JSON.stringify({cmd: "seek", ms: 12000}));
+sendCommand("seek", {ms: 12000});
 ```
+
+`sendCommand()` is the only frontend function that calls
+`window.external.invoke`. Keeping serialization at this boundary prevents
+rendering and event code from duplicating transport details.
 
 The Nim host parses the object and dispatches on `cmd` in `handleMessage()`.
 Most commands are fire-and-forget. Dictionary lookup is the exception: it uses
@@ -53,13 +58,12 @@ Example correlated dictionary lookup:
 ```js
 var id = nextRequestId++;
 pendingLookups[id] = resolve;
-window.external.invoke(JSON.stringify({
-  cmd: "lookupWord",
+sendCommand("lookupWord", {
   id: id,
   word: "trilogy",
   context: "a trilogy of films",
   offset: 2
-}));
+});
 ```
 
 ## Host to frontend
@@ -149,8 +153,8 @@ configuration script early.
 
 ## Adding a command
 
-1. Add a small frontend wrapper in `src/ui/app.js` that sends a JSON object with
-   a unique `cmd` name.
+1. Send the domain action through `sendCommand()` in `src/ui/app.js` using a
+   unique `cmd` name.
 2. Add the matching branch to `handleMessage()` in `src/main.nim`.
 3. Validate required fields at the host boundary before changing application
    state.

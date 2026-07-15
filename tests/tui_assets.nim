@@ -15,6 +15,10 @@ block assembles_embedded_player:
   doAssert "id=\"word-panel-template\"" in html
   doAssert "id=\"lrc-line-template\"" in html
   doAssert "id=\"dictionary-popup-template\"" in html
+  doAssert html.count("window.external.invoke") == 1
+  doAssert "recentDropdown.addEventListener('click'" in html
+  doAssert "wordPanel.addEventListener('click'" in html
+  doAssert "lrcContainer.addEventListener('click'" in html
   doAssert "var html = '<div class=\"rd-header\">Recent Files</div>'" notin html
   doAssert "html += '<div class=\"wp-item\" data-file='" notin html
   doAssert "insertAdjacentHTML" notin html
