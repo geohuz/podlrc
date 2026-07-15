@@ -1,9 +1,9 @@
-import std/[os, json, times]
+import std/[os, json, strutils, times]
 
 import webview
 import lrc, audio_engine, system_dictionary
 
-const DictionarySource = "macOS-current-v1"
+const DictionarySource = "macOS-oaldpe-html-v1"
 
 const DataDir = getHomeDir() / ".podlrc"
 const RecentPath = DataDir / "recent.json"
@@ -318,8 +318,19 @@ const PlayerHtml = """
   }
   .wp-item:hover { background: #383838; }
   .wp-item:last-child { border-bottom: none; }
-  .wp-word { color: #fff; font-size: calc(var(--lrc-size) * 0.7); font-weight: 650; flex-shrink: 0; min-width: 88px; }
-  .wp-definition { flex: 1; font-size: calc(var(--lrc-size) * 0.7); color: #f0f0f0; line-height: 1.45; }
+  .wp-item.expanded { flex-wrap: wrap; }
+  .wp-toggle {
+    flex-shrink: 0; width: 16px; color: #777; font-size: calc(var(--lrc-size) * 0.5);
+    line-height: 1.35; cursor: pointer; transition: transform 0.12s, color 0.12s;
+  }
+  .wp-toggle:hover { color: #aaa; }
+  .wp-item.expanded .wp-toggle { transform: rotate(90deg); color: #aaa; }
+  .wp-word { color: #fff; font-size: calc(var(--lrc-size) * 0.5); font-weight: 650; flex-shrink: 0; min-width: 88px; }
+  .wp-definition {
+    display: none; flex: 1 0 100%; margin-left: 26px;
+    font-size: calc(var(--lrc-size) * 0.5); color: #f0f0f0; line-height: 1.45;
+  }
+  .wp-item.expanded .wp-definition { display: block; }
   .dict-sense + .dict-sense {
     margin-top: 9px; padding-top: 8px; border-top: 1px solid #3a3a3a;
   }
@@ -650,6 +661,7 @@ const PlayerHtml = """
     var html = '<div class="rd-header">Vocabulary</div>';
     entries.forEach(function(e) {
       html += '<div class="wp-item" data-file="' + esc(e.file) + '" data-ms="' + e.timeMs + '">' +
+        '<span class="wp-toggle" title="Expand definition">▶</span>' +
         '<span class="wp-word">' + esc(e.word) + '</span>' +
         '<span class="wp-definition">' + (formatDictionaryDefinition(e.definition, e.word) || 'Looking up definition...') + '</span>' +
         '<span class="wp-del" data-word="' + esc(e.word) + '" data-file="' + esc(e.file) + '" data-ms="' + e.timeMs + '">&times;</span>' +
@@ -659,6 +671,11 @@ const PlayerHtml = """
     panel.querySelectorAll('.wp-item').forEach(function(el) {
       el.addEventListener('click', function(ev) {
         if (ev.target.classList.contains('wp-del')) return;
+        if (ev.target.classList.contains('wp-toggle')) {
+          ev.stopPropagation();
+          el.classList.toggle('expanded');
+          return;
+        }
         var f = el.getAttribute('data-file');
         var ms = parseInt(el.getAttribute('data-ms'));
         window.external.invoke(JSON.stringify({cmd: 'openWordRef', file: f, ms: ms}));
@@ -708,18 +725,31 @@ const PlayerHtml = """
     return text;
   }
 
+  function removeDictionaryNoise(doc) {
+    if (!doc) return;
+    doc.querySelectorAll(
+      'script, style, .topic-g, [unbox="snippet"], ' +
+      '[unbox="extra_examples"], [unbox="wordorigin"]'
+    ).forEach(function(node) {
+      node.remove();
+    });
+    doc.querySelectorAll('.box_title, .prefix').forEach(function(node) {
+      var title = node.textContent.replace(/\s+/g, ' ').trim();
+      if (/^(Oxford Collocations Dictionary|Extra Examples|Word Origin|Topics)\b/i.test(title)) {
+        var container = node.closest('.collapse, .unbox, .topic-g') || node.parentElement;
+        if (container) container.remove();
+      }
+    });
+    doc.querySelectorAll('.collapse').forEach(function(node) {
+      if (!node.textContent.trim()) node.remove();
+    });
+  }
+
   function cleanDictionaryDefinition(definition, word) {
     var text = (definition || '').trim();
     if (word) {
       text = text.replace(new RegExp('^' + escapeRegExp(word) + '\\b\\s*', 'i'), '');
     }
-
-    // IPA blocks can recur in inflections and secondary parts of speech.
-    // Requiring an IPA-specific character avoids ordinary slash expressions.
-    text = text.replace(
-      /\/(?=[^/\n]{0,80}[ˈˌəɜɪʊɛɔæɑɒʌɐɚɝθðŋʃʒː])[^/\n]{1,80}\/\s*/g,
-      ''
-    );
 
     text = removeDictionarySections(text);
 
@@ -780,12 +810,7 @@ const PlayerHtml = """
     var doc = null;
     if (definition.indexOf('<') >= 0) {
       doc = new DOMParser().parseFromString(definition, 'text/html');
-      doc.querySelectorAll(
-        '.phonetics, .sound, script, style, .topic-g, ' +
-        '[unbox="snippet"], [unbox="extra_examples"], [unbox="wordorigin"]'
-      ).forEach(function(node) {
-        node.remove();
-      });
+      removeDictionaryNoise(doc);
     }
 
     var senses = doc ? Array.from(doc.querySelectorAll('li.sense')) : [];
@@ -855,7 +880,7 @@ const PlayerHtml = """
   function hydrateMissingDefinitions() {
     Object.values(_savedWords).forEach(function(entry) {
       var key = wordKey(entry.word, entry.file, entry.timeMs);
-      if ((entry.definition && entry.source === 'macOS-current-v1') || _definitionRequests[key]) return;
+      if ((entry.definition && entry.source === 'macOS-oaldpe-html-v1') || _definitionRequests[key]) return;
       _definitionRequests[key] = true;
       requestDictionaryDefinition(entry.word).then(function(definition) {
         if (!definition) return;
@@ -1253,11 +1278,16 @@ proc buildHtml(): string =
   var recentJson = newJArray()
   for p in loadRecent():
     recentJson.add(%p)
+  var config = newJObject()
+  config["lrcSize"] = %lrcSize
+  config["recent"] = recentJson
+  config["initialState"] = initialState
+  let configJson = ($config).replace("</", "<\\/")
 
   result = PlayerHtml & """
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-  initApp({lrcSize:""" & $lrcSize & """,recent:""" & $recentJson & """,initialState:""" & $initialState & """});
+  initApp(""" & configJson & """);
 });
 </script>
 """
