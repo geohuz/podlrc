@@ -5,7 +5,7 @@ book.
 
 ## Installation
 
-1. Go to the project's **GitHub Releases** page.
+1. Go to the project's **[GitHub Releases](https://github.com/geohuz/podlrc/releases)** page.
 2. Download the latest macOS archive, for example:
 
    ```text
