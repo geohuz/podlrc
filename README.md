@@ -69,6 +69,11 @@ to review saved words:
 podlrc uses Apple's built-in Dictionary services. It does not bundle a
 dictionary and it does not go online for word lookup.
 
+When you click a word, podlrc sends the surrounding lyric line to Apple's
+Dictionary services so macOS can detect longer phrases where possible. For
+example, clicking `obsessive-compulsive` in `obsessive-compulsive disorder` can
+use the longer phrase if the system dictionary recognizes it.
+
 The lookup result follows the order configured in Dictionary.app:
 
 1. Open Apple's **Dictionary** app.

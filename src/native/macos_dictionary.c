@@ -21,7 +21,24 @@ static char* copy_utf8(CFStringRef string) {
     return result;
 }
 
-static CFStringRef copy_markup_definition(CFStringRef word) {
+static CFStringRef copy_phrase_at_offset(CFStringRef text, CFIndex offset) {
+    if (text == NULL || offset < 0 || offset >= CFStringGetLength(text)) {
+        return NULL;
+    }
+
+    CFRange range = DCSGetTermRangeInString(NULL, text, offset);
+    if (range.location == kCFNotFound || range.length <= 0) {
+        return NULL;
+    }
+    return CFStringCreateWithSubstring(kCFAllocatorDefault, text, range);
+}
+
+static int same_string(CFStringRef a, CFStringRef b) {
+    if (a == NULL || b == NULL) return 0;
+    return CFStringCompare(a, b, kCFCompareCaseInsensitive) == kCFCompareEqualTo;
+}
+
+static CFStringRef copy_markup_definition(CFStringRef word, CFStringRef phrase) {
     DCSGetActiveDictionariesFn get_dictionaries =
         (DCSGetActiveDictionariesFn)dlsym(
             RTLD_DEFAULT, "DCSGetActiveDictionaries");
@@ -41,39 +58,67 @@ static CFStringRef copy_markup_definition(CFStringRef word) {
     for (CFIndex i = 0; i < dictionary_count; i++) {
         DCSDictionaryRef dictionary = (DCSDictionaryRef)
             CFArrayGetValueAtIndex(dictionaries, i);
-        CFArrayRef records = copy_records(dictionary, word, NULL, NULL);
-        if (records != NULL && CFArrayGetCount(records) > 0) {
-            CFTypeRef record = CFArrayGetValueAtIndex(records, 0);
-            CFStringRef definition = copy_data(record, 0);
-            CFRelease(records);
-            if (definition != NULL) return definition;
-        } else if (records != NULL) {
-            CFRelease(records);
+        CFStringRef queries[2] = { phrase, word };
+        for (int q = 0; q < 2; q++) {
+            if (queries[q] == NULL) continue;
+            if (q == 1 && same_string(phrase, word)) continue;
+
+            CFArrayRef records = copy_records(dictionary, queries[q], NULL, NULL);
+            if (records != NULL && CFArrayGetCount(records) > 0) {
+                CFTypeRef record = CFArrayGetValueAtIndex(records, 0);
+                CFStringRef definition = copy_data(record, 0);
+                CFRelease(records);
+                if (definition != NULL) return definition;
+            } else if (records != NULL) {
+                CFRelease(records);
+            }
         }
     }
     return NULL;
 }
 
-char* pod_dictionary_lookup(const char* word) {
+char* pod_dictionary_lookup_context(
+        const char* word,
+        const char* context,
+        long offset) {
     if (word == NULL || word[0] == '\0') return NULL;
 
     CFStringRef text = CFStringCreateWithCString(
         kCFAllocatorDefault, word, kCFStringEncodingUTF8);
     if (text == NULL) return NULL;
 
-    CFStringRef definition = copy_markup_definition(text);
+    CFStringRef context_text = NULL;
+    CFStringRef phrase = NULL;
+    if (context != NULL && context[0] != '\0' && offset >= 0) {
+        context_text = CFStringCreateWithCString(
+            kCFAllocatorDefault, context, kCFStringEncodingUTF8);
+        phrase = copy_phrase_at_offset(context_text, (CFIndex)offset);
+        if (phrase != NULL &&
+                CFStringGetLength(phrase) < CFStringGetLength(text)) {
+            CFRelease(phrase);
+            phrase = NULL;
+        }
+    }
+
+    CFStringRef definition = copy_markup_definition(text, phrase);
     if (definition == NULL) {
         CFRange range = DCSGetTermRangeInString(NULL, text, 0);
         if (range.location != kCFNotFound) {
             definition = DCSCopyTextDefinition(NULL, text, range);
         }
     }
+    if (phrase != NULL) CFRelease(phrase);
+    if (context_text != NULL) CFRelease(context_text);
     CFRelease(text);
     if (definition == NULL) return NULL;
 
     char* result = copy_utf8(definition);
     CFRelease(definition);
     return result;
+}
+
+char* pod_dictionary_lookup(const char* word) {
+    return pod_dictionary_lookup_context(word, NULL, -1);
 }
 
 void pod_dictionary_free(char* text) {

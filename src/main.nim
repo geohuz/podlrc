@@ -334,38 +334,44 @@ const PlayerHtml = """
     position: absolute; top: 46px; left: 86px; z-index: 200;
     background: #2a2a2a; border: 1px solid #444; border-radius: 8px;
     width: 640px; max-width: calc(100vw - 110px);
-    max-height: 420px; overflow-y: auto;
+    max-height: 420px; overflow: hidden;
     box-shadow: 0 8px 30px rgba(0,0,0,0.6);
-    display: none; flex-direction: column; padding: 4px 0;
+    display: none; flex-direction: column;
   }
   #word-panel.open { display: flex; }
-  #word-panel::-webkit-scrollbar { width: 4px; }
-  #word-panel::-webkit-scrollbar-thumb { background: #444; border-radius: 2px; }
+  .wp-list {
+    box-sizing: border-box; max-height: 420px; overflow-y: auto; overflow-x: hidden;
+    padding: 8px 14px 8px 8px; scrollbar-gutter: stable;
+  }
+  .wp-list::-webkit-scrollbar { width: 4px; }
+  .wp-list::-webkit-scrollbar-thumb { background: #444; border-radius: 2px; }
   .wp-empty { padding: 20px 14px; font-size: 13px; color: #555; text-align: center; }
   .wp-item {
-    display: flex; align-items: flex-start; gap: 10px;
-    padding: 10px 14px; cursor: pointer; font-size: 13px;
-    color: #ccc; border-bottom: 1px solid #333;
+    display: grid; grid-template-columns: 16px minmax(0, 1fr) 28px;
+    align-items: start; column-gap: 10px; row-gap: 8px;
+    padding: 10px 12px; cursor: pointer; font-size: 13px;
+    color: #ccc; border-radius: 6px; box-sizing: border-box; width: 100%;
     transition: background 0.1s;
   }
   .wp-item:hover { background: #383838; }
-  .wp-item:last-child { border-bottom: none; }
-  .wp-item.expanded { flex-wrap: wrap; }
+  .wp-item + .wp-item { margin-top: 4px; }
   .wp-toggle {
-    flex-shrink: 0; width: 16px; color: #777; font-size: calc(var(--lrc-size) * 0.5);
+    grid-column: 1; grid-row: 1; width: 16px; color: #777; font-size: calc(var(--lrc-size) * 0.5);
     line-height: 1.35; cursor: pointer; transition: transform 0.12s, color 0.12s;
   }
   .wp-toggle:hover { color: #aaa; }
   .wp-item.expanded .wp-toggle { transform: rotate(90deg); color: #aaa; }
   .wp-word {
+    grid-column: 2; grid-row: 1; min-width: 0;
     color: #8ab4ff; font-size: calc(var(--lrc-size) * 0.5); font-weight: 650;
-    flex-shrink: 0; min-width: 88px; text-decoration: underline;
+    text-decoration: underline;
     text-underline-offset: 2px; cursor: pointer;
   }
   .wp-word:hover { color: #b7d0ff; }
   .wp-definition {
-    display: none; flex: 1 0 100%; margin-left: 26px;
+    display: none; grid-column: 2 / 4; grid-row: 2; min-width: 0;
     font-size: calc(var(--lrc-size) * 0.5); color: #f0f0f0; line-height: 1.45;
+    overflow-wrap: anywhere;
   }
   .wp-item.expanded .wp-definition { display: block; }
   .dict-sense + .dict-sense {
@@ -391,7 +397,7 @@ const PlayerHtml = """
   .dict-pron { color: #aaa; }
   .dict-pos { color: #999; font-weight: 650; margin: 4px 0 6px; }
   .wp-del {
-    flex-shrink: 0; width: 28px; height: 28px; border-radius: 50%;
+    grid-column: 3; grid-row: 1; width: 28px; height: 28px; border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
     color: #777; font-size: 18px; cursor: pointer; line-height: 1;
   }
@@ -650,6 +656,7 @@ const PlayerHtml = """
     dd.querySelectorAll('.recent-item').forEach(function(el) {
       el.onclick = function(e) {
         e.stopPropagation();
+        clearWordPopup();
         var idx = parseInt(this.getAttribute('data-idx'));
         window.external.invoke(JSON.stringify({cmd: 'openRecent', path: _recentFiles[idx]}));
         dd.classList.remove('open');
@@ -673,6 +680,7 @@ const PlayerHtml = """
 
   function toggleRecentDropdown(e) {
     e.stopPropagation();
+    clearWordPopup();
     document.getElementById('word-panel').classList.remove('open');
     var dd = document.getElementById('recent-dropdown');
     dd.classList.toggle('open');
@@ -714,7 +722,7 @@ const PlayerHtml = """
     }
     btn.style.display = '';
     entries.sort(function(a, b) { return a.word.localeCompare(b.word); });
-    var html = '<div class="rd-header">Vocabulary</div>';
+    var html = '<div class="wp-list"><div class="rd-header">Vocabulary</div>';
     entries.forEach(function(e) {
       html += '<div class="wp-item" data-file="' + esc(e.file) + '" data-ms="' + e.timeMs + '">' +
         '<span class="wp-toggle" title="Expand definition">▶</span>' +
@@ -723,6 +731,7 @@ const PlayerHtml = """
         '<span class="wp-del" data-word="' + esc(e.word) + '" data-file="' + esc(e.file) + '" data-ms="' + e.timeMs + '">&times;</span>' +
         '</div>';
     });
+    html += '</div>';
     panel.innerHTML = html;
     panel.querySelectorAll('.wp-item').forEach(function(el) {
       el.addEventListener('click', function(ev) {
@@ -732,6 +741,7 @@ const PlayerHtml = """
           el.classList.toggle('expanded');
           return;
         }
+        clearWordPopup();
         var f = el.getAttribute('data-file');
         var ms = parseInt(el.getAttribute('data-ms'));
         window.external.invoke(JSON.stringify({cmd: 'openWordRef', file: f, ms: ms}));
@@ -749,12 +759,15 @@ const PlayerHtml = """
     });
   }
 
-  function requestDictionaryDefinition(word) {
+  function requestDictionaryDefinition(word, context, offset) {
     return new Promise(function(resolve) {
       var id = _nextDictionaryRequest++;
       _dictionaryRequests[id] = resolve;
       setTimeout(function() {
-        window.external.invoke(JSON.stringify({cmd: 'lookupWord', id: id, word: word}));
+        var message = {cmd: 'lookupWord', id: id, word: word};
+        if (context !== undefined && context !== null) message.context = context;
+        if (offset !== undefined && offset !== null) message.offset = offset;
+        window.external.invoke(JSON.stringify(message));
       }, 0);
     });
   }
@@ -808,6 +821,7 @@ const PlayerHtml = """
 
   function toggleWordPanel(e) {
     e.stopPropagation();
+    clearWordPopup();
     document.getElementById('recent-dropdown').classList.remove('open');
     var panel = document.getElementById('word-panel');
     panel.classList.toggle('open');
@@ -820,7 +834,8 @@ const PlayerHtml = """
     var idx = 0, m;
     while ((m = re.exec(text)) !== null) {
       out += esc(text.substring(idx, m.index));
-      out += '<span class="word" data-word="' + esc(m[1]) + '">' + esc(m[1]) + '</span>';
+      out += '<span class="word" data-word="' + esc(m[1]) +
+        '" data-offset="' + m.index + '">' + esc(m[1]) + '</span>';
       idx = m.index + m[1].length;
     }
     out += esc(text.substring(idx));
@@ -876,8 +891,16 @@ const PlayerHtml = """
     _visibleLookupWord = '';
   }
 
-  function lookupWord(word) {
-    return requestDictionaryDefinition(word).then(function(definition) {
+  function clearWordPopup() {
+    hidePopup();
+    document.querySelectorAll('.word.selected').forEach(function(w) {
+      w.classList.remove('selected');
+    });
+    window.getSelection().removeAllRanges();
+  }
+
+  function lookupWord(word, context, offset) {
+    return requestDictionaryDefinition(word, context, offset).then(function(definition) {
       var normalized = normalizeDictionaryDefinition(definition, word);
       var displayDefinition = normalized.definition;
       if (_visibleLookupWord === word) {
@@ -930,14 +953,17 @@ const PlayerHtml = """
     var lineIdx = lineEl ? Array.prototype.indexOf.call(container.children, lineEl) : -1;
     if (lineIdx >= 0 && lineIdx < _lines.length) {
       var timeMs = _lines[lineIdx].timeStartMs;
+      var lineText = _lines[lineIdx].text || '';
+      var wordOffset = parseInt(el.getAttribute('data-offset'));
+      if (isNaN(wordOffset)) wordOffset = 0;
       var key = wordKey(word);
       if (isSavedWord(word)) {
-        lookupWord(word);
+        lookupWord(word, lineText, wordOffset);
       } else if (_pendingWordSaves[key]) {
-        lookupWord(word);
+        lookupWord(word, lineText, wordOffset);
       } else {
         _pendingWordSaves[key] = true;
-        lookupWord(word).then(function(normalized) {
+        lookupWord(word, lineText, wordOffset).then(function(normalized) {
           if (!normalized.definition) {
             delete _pendingWordSaves[key];
             return;
@@ -960,10 +986,7 @@ const PlayerHtml = """
 
   document.addEventListener('click', function(e) {
     if (!e.target.closest('.word')) {
-      hidePopup();
-      document.querySelectorAll('.word.selected').forEach(function(w) {
-        w.classList.remove('selected');
-      });
+      clearWordPopup();
     }
     // Close dropdowns on outside click
     if (!e.target.closest('#btn-recent') && !e.target.closest('#recent-dropdown')) {
@@ -1090,6 +1113,9 @@ const PlayerHtml = """
 
   /* ── button events ── */
   document.getElementById('btn-open').onclick = function() {
+    clearWordPopup();
+    document.getElementById('recent-dropdown').classList.remove('open');
+    document.getElementById('word-panel').classList.remove('open');
     window.external.invoke(JSON.stringify({cmd: 'open'}));
   };
   document.getElementById('btn-recent').onclick = toggleRecentDropdown;
@@ -1348,8 +1374,13 @@ proc handleMessage(w: Webview, arg: string) =
 
     of "lookupWord":
       var response = newJObject()
+      let word = msg["word"].getStr()
       response["id"] = %msg["id"].getInt()
-      response["definition"] = %lookupDefinition(msg["word"].getStr())
+      if msg.hasKey("context") and msg.hasKey("offset"):
+        response["definition"] = %lookupDefinition(
+          word, msg["context"].getStr(), msg["offset"].getInt())
+      else:
+        response["definition"] = %lookupDefinition(word)
       discard w.eval(cstring("resolveDictionaryLookup(" & $response & ");"))
 
     of "addWord":
