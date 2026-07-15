@@ -59,6 +59,8 @@ background wherever they appear in the lyrics. Click the small **×** next to a
 highlighted word to remove it directly from the lyrics, or open **Vocabulary**
 to review saved words:
 
+- Vocabulary defaults to the current podcast. Use **All** to show saved words
+  from every podcast.
 - Click a word entry to jump back to its lyric line.
 - Click the triangle to expand or collapse a definition.
 - Click **×** to remove a word.

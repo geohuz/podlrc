@@ -345,6 +345,23 @@ const PlayerHtml = """
   }
   .wp-list::-webkit-scrollbar { width: 4px; }
   .wp-list::-webkit-scrollbar-thumb { background: #444; border-radius: 2px; }
+  .wp-header {
+    position: sticky; top: 0; z-index: 2;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; padding: 6px 6px 8px;
+    background: #2a2a2a; box-shadow: 0 1px 0 rgba(255,255,255,0.04);
+  }
+  .wp-filter {
+    display: flex; min-width: 0; padding: 2px; border-radius: 999px;
+    background: #202020; border: 1px solid #3a3a3a;
+  }
+  .wp-filter button {
+    max-width: 210px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    border: 0; border-radius: 999px; background: transparent; color: #777;
+    padding: 4px 9px; font: inherit; font-size: 11px; cursor: pointer;
+  }
+  .wp-filter button.active { background: #444; color: #fff; }
+  .wp-filter button:hover { color: #ddd; }
   .wp-empty { padding: 20px 14px; font-size: 13px; color: #555; text-align: center; }
   .wp-item {
     display: grid; grid-template-columns: 16px minmax(0, 1fr) 28px;
@@ -620,6 +637,7 @@ const PlayerHtml = """
   var _dictionaryRequests = {};
   var _nextDictionaryRequest = 1;
   var _visibleLookupWord = '';
+  var _wordFilter = 'current';
 
   function fmtTime(ms) {
     if (ms <= 0) return '00:00';
@@ -632,6 +650,11 @@ const PlayerHtml = """
     var d = document.createElement('div');
     d.textContent = s;
     return d.innerHTML;
+  }
+
+  function podcastTitle(path) {
+    if (!path) return 'Current';
+    return path.split('/').pop().replace(/\.[^.]+$/i, '') || 'Current';
   }
 
   /* ── recent files ── */
@@ -714,15 +737,32 @@ const PlayerHtml = """
   function renderWordPanel() {
     var panel = document.getElementById('word-panel');
     var btn = document.getElementById('btn-words');
-    var entries = Object.values(_savedWords);
-    if (entries.length === 0) {
+    var allEntries = Object.values(_savedWords);
+    if (allEntries.length === 0) {
       btn.style.display = 'none';
       panel.classList.remove('open');
       return;
     }
     btn.style.display = '';
+    var entries = allEntries;
+    if (_wordFilter === 'current') {
+      entries = allEntries.filter(function(e) { return e.file === _currentFile; });
+    }
     entries.sort(function(a, b) { return a.word.localeCompare(b.word); });
-    var html = '<div class="wp-list"><div class="rd-header">Vocabulary</div>';
+    var title = podcastTitle(_currentFile);
+    var html = '<div class="wp-list">' +
+      '<div class="wp-header">' +
+        '<div class="rd-header">Vocabulary</div>' +
+        '<div class="wp-filter">' +
+          '<button type="button" class="' + (_wordFilter === 'current' ? 'active' : '') +
+            '" onclick="setWordFilter(event, &quot;current&quot;)" title="' + esc(title) + '">' + esc(title) + '</button>' +
+          '<button type="button" class="' + (_wordFilter === 'all' ? 'active' : '') +
+            '" onclick="setWordFilter(event, &quot;all&quot;)">All</button>' +
+        '</div>' +
+      '</div>';
+    if (entries.length === 0) {
+      html += '<div class="wp-empty">No saved words for this podcast.</div>';
+    }
     entries.forEach(function(e) {
       html += '<div class="wp-item" data-file="' + esc(e.file) + '" data-ms="' + e.timeMs + '">' +
         '<span class="wp-toggle" title="Expand definition">▶</span>' +
@@ -757,6 +797,15 @@ const PlayerHtml = """
         }));
       });
     });
+  }
+
+  function setWordFilter(ev, filter) {
+    if (ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+    }
+    _wordFilter = filter === 'all' ? 'all' : 'current';
+    renderWordPanel();
   }
 
   function requestDictionaryDefinition(word, context, offset) {
@@ -824,6 +873,11 @@ const PlayerHtml = """
     clearWordPopup();
     document.getElementById('recent-dropdown').classList.remove('open');
     var panel = document.getElementById('word-panel');
+    var opening = !panel.classList.contains('open');
+    if (opening) {
+      _wordFilter = 'current';
+      renderWordPanel();
+    }
     panel.classList.toggle('open');
   }
 
@@ -1048,7 +1102,11 @@ const PlayerHtml = """
     }
 
     if (data.currentFile !== undefined) {
-      _currentFile = data.currentFile || '';
+      var nextFile = data.currentFile || '';
+      if (nextFile !== _currentFile) {
+        _currentFile = nextFile;
+        if (Object.keys(_savedWords).length > 0) renderWordPanel();
+      }
     }
 
     if (data.lines !== undefined) {
