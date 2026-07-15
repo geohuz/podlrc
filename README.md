@@ -50,11 +50,15 @@ file.
 ### Vocabulary
 
 Click a word in the lyrics to look it up with macOS Dictionary and save it to
-**Vocabulary**. Click the saved word again to remove it.
+**Vocabulary**. Clicking an already saved word looks it up again but does not
+remove it.
 
-Saved words are highlighted with a blue background in the lyrics. Open
-**Vocabulary** to review saved words:
+Vocabulary stores each word once. Saved words are highlighted with a blue
+background wherever they appear in the lyrics. Click the small **×** next to a
+highlighted word to remove it directly from the lyrics, or open **Vocabulary**
+to review saved words:
 
+- Click a word entry to jump back to its lyric line.
 - Click the triangle to expand or collapse a definition.
 - Click **×** to remove a word.
 - Removing a word also removes its lyric highlight.

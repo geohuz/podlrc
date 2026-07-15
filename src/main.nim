@@ -94,25 +94,47 @@ type
     file: string
     timeMs: int64
 
+proc sameWordEntry(entry: WordEntry; word: string): bool =
+  cmpIgnoreCase(entry.word, word) == 0
+
+proc findWordEntry(entries: seq[WordEntry]; word: string): int =
+  for i, entry in entries:
+    if entry.sameWordEntry(word):
+      return i
+  -1
+
 proc loadWords(): seq[WordEntry] =
   if fileExists(WordsPath):
     try:
       let data = parseJson(readFile(WordsPath))
       for item in data:
         let source = if item.hasKey("source"): item["source"].getStr() else: ""
-        result.add(WordEntry(
+        let entry = WordEntry(
           word: item["word"].getStr(),
           definition: if item.hasKey("definition"): item["definition"].getStr() else: "",
           source: source,
           file: item["file"].getStr(),
           timeMs: item["timeMs"].getInt(),
-        ))
+        )
+        let existing = result.findWordEntry(entry.word)
+        if existing < 0:
+          result.add(entry)
+        elif entry.definition.len > 0 and result[existing].definition.len == 0:
+          result[existing].definition = entry.definition
+          result[existing].source = entry.source
     except: discard
 
 proc saveWords(entries: seq[WordEntry]) =
   createDir(DataDir)
+  var unique: seq[WordEntry]
+  for entry in entries:
+    let existing = unique.findWordEntry(entry.word)
+    if existing < 0:
+      unique.add(entry)
+    elif entry.definition.len > 0:
+      unique[existing] = entry
   var arr = newJArray()
-  for e in entries:
+  for e in unique:
     var obj = newJObject()
     obj["word"] = %e.word
     obj["definition"] = %e.definition
@@ -128,14 +150,18 @@ proc normalizeDictionarySource(source: string): string =
   else:
     DictionarySource
 
-proc toggleWord(word, definition, source, file: string, timeMs: int64): bool =
-  ## Returns true if word was added, false if removed.
+proc addWord(word, definition, source, file: string, timeMs: int64): bool =
+  ## Returns true if a new word was added, false if an existing word was updated.
   var entries = loadWords()
-  for i in 0..<entries.len:
-    if entries[i].word == word and entries[i].file == file and entries[i].timeMs == timeMs:
-      entries.delete(i)
+  let existing = entries.findWordEntry(word)
+  if existing >= 0:
+    if definition.len > 0:
+      entries[existing].definition = definition
+      entries[existing].source = normalizeDictionarySource(source)
       saveWords(entries)
       return false
+    saveWords(entries)
+    return false
   entries.add(WordEntry(
     word: word,
     definition: definition,
@@ -146,14 +172,28 @@ proc toggleWord(word, definition, source, file: string, timeMs: int64): bool =
   saveWords(entries)
   return true
 
+proc removeWord(word: string): bool =
+  var entries = loadWords()
+  var changed = false
+  var i = 0
+  while i < entries.len:
+    if entries[i].sameWordEntry(word):
+      entries.delete(i)
+      changed = true
+    else:
+      inc i
+  if changed:
+    saveWords(entries)
+  changed
+
 proc setWordDefinition(word, definition, source, file: string, timeMs: int64): bool =
   var entries = loadWords()
-  for i in 0 ..< entries.len:
-    if entries[i].word == word and entries[i].file == file and entries[i].timeMs == timeMs:
-      entries[i].definition = definition
-      entries[i].source = normalizeDictionarySource(source)
-      saveWords(entries)
-      return true
+  let existing = entries.findWordEntry(word)
+  if existing >= 0:
+    entries[existing].definition = definition
+    entries[existing].source = normalizeDictionarySource(source)
+    saveWords(entries)
+    return true
 
 proc wordsJson(): JsonNode =
   var arr = newJArray()
@@ -317,7 +357,12 @@ const PlayerHtml = """
   }
   .wp-toggle:hover { color: #aaa; }
   .wp-item.expanded .wp-toggle { transform: rotate(90deg); color: #aaa; }
-  .wp-word { color: #fff; font-size: calc(var(--lrc-size) * 0.5); font-weight: 650; flex-shrink: 0; min-width: 88px; }
+  .wp-word {
+    color: #8ab4ff; font-size: calc(var(--lrc-size) * 0.5); font-weight: 650;
+    flex-shrink: 0; min-width: 88px; text-decoration: underline;
+    text-underline-offset: 2px; cursor: pointer;
+  }
+  .wp-word:hover { color: #b7d0ff; }
   .wp-definition {
     display: none; flex: 1 0 100%; margin-left: 26px;
     font-size: calc(var(--lrc-size) * 0.5); color: #f0f0f0; line-height: 1.45;
@@ -346,12 +391,20 @@ const PlayerHtml = """
   .dict-pron { color: #aaa; }
   .dict-pos { color: #999; font-weight: 650; margin: 4px 0 6px; }
   .wp-del {
-    flex-shrink: 0; width: 22px; height: 22px; border-radius: 50%;
+    flex-shrink: 0; width: 28px; height: 28px; border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
-    color: #666; font-size: 14px; cursor: pointer; line-height: 1;
+    color: #777; font-size: 18px; cursor: pointer; line-height: 1;
   }
   .wp-del:hover { background: rgba(255,80,80,0.2); color: #f55; }
   .word.saved, .word.saved.selected { background: #2563eb; color: #fff; }
+  .word-remove {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 18px; height: 18px; margin-left: 5px; border-radius: 50%;
+    font-size: 13px; line-height: 1; vertical-align: 1px;
+    color: rgba(255,255,255,0.82); background: rgba(255,255,255,0.18);
+    cursor: pointer;
+  }
+  .word-remove:hover { background: rgba(255,255,255,0.32); color: #fff; }
 
   /* ── LRC area ── */
   #lrc-container {
@@ -628,15 +681,22 @@ const PlayerHtml = """
   /* ── saved words ── */
   var _savedWords = {};
   var _definitionRequests = {};
+  var _pendingWordSaves = {};
 
-  function wordKey(word, file, timeMs) {
-    return word.toLowerCase() + '|' + file + '|' + timeMs;
+  function wordKey(word) {
+    return (word || '').toLowerCase();
+  }
+
+  function isSavedWord(word) {
+    return Object.prototype.hasOwnProperty.call(_savedWords, wordKey(word));
   }
 
   function updateWordPanel(words) {
     _savedWords = {};
     (words || []).forEach(function(w) {
-      _savedWords[wordKey(w.word, w.file, w.timeMs)] = w;
+      var key = wordKey(w.word);
+      _savedWords[key] = w;
+      delete _pendingWordSaves[key];
     });
     renderWordPanel();
     updateWordHighlights();
@@ -682,10 +742,8 @@ const PlayerHtml = """
       el.addEventListener('click', function(ev) {
         ev.stopPropagation();
         window.external.invoke(JSON.stringify({
-          cmd: 'toggleWord',
-          word: el.getAttribute('data-word'),
-          file: el.getAttribute('data-file'),
-          timeMs: parseInt(el.getAttribute('data-ms'))
+          cmd: 'removeWord',
+          word: el.getAttribute('data-word')
         }));
       });
     });
@@ -711,7 +769,7 @@ const PlayerHtml = """
 
   function hydrateMissingDefinitions() {
     Object.values(_savedWords).forEach(function(entry) {
-      var key = wordKey(entry.word, entry.file, entry.timeMs);
+      var key = wordKey(entry.word);
       if (entry.definition || _definitionRequests[key]) return;
       _definitionRequests[key] = true;
       requestDictionaryDefinition(entry.word).then(function(definition) {
@@ -731,10 +789,19 @@ const PlayerHtml = """
 
   function updateWordHighlights() {
     document.querySelectorAll('.lrc-line').forEach(function(lineEl, lineIdx) {
-      var line = _lines[lineIdx];
       lineEl.querySelectorAll('.word').forEach(function(el) {
-        var key = line ? wordKey(el.textContent.trim(), _currentFile, line.timeStartMs) : '';
-        el.classList.toggle('saved', key !== '' && _savedWords[key] !== undefined);
+        var word = el.getAttribute('data-word') || el.textContent.trim();
+        var saved = wordKey(word) !== '' && isSavedWord(word);
+        el.classList.toggle('saved', saved);
+        var remove = el.querySelector('.word-remove');
+        if (saved && !remove) {
+          el.insertAdjacentHTML(
+            'beforeend',
+            '<span class="word-remove" title="Remove from Vocabulary">&times;</span>'
+          );
+        } else if (!saved && remove) {
+          remove.remove();
+        }
       });
     });
   }
@@ -753,7 +820,7 @@ const PlayerHtml = """
     var idx = 0, m;
     while ((m = re.exec(text)) !== null) {
       out += esc(text.substring(idx, m.index));
-      out += '<span class="word">' + esc(m[1]) + '</span>';
+      out += '<span class="word" data-word="' + esc(m[1]) + '">' + esc(m[1]) + '</span>';
       idx = m.index + m[1].length;
     }
     out += esc(text.substring(idx));
@@ -778,11 +845,19 @@ const PlayerHtml = """
       div.querySelectorAll('.word').forEach(function(w) {
         w.addEventListener('click', function(e) {
           e.stopPropagation();
+          if (e.target.classList.contains('word-remove')) {
+            window.external.invoke(JSON.stringify({
+              cmd: 'removeWord',
+              word: w.getAttribute('data-word') || w.textContent.trim()
+            }));
+            return;
+          }
           onWordClick(w, e);
         });
       });
       container.appendChild(div);
     });
+    updateWordHighlights();
   }
 
   /* ── dictionary popup ── */
@@ -817,6 +892,18 @@ const PlayerHtml = """
   }
 
   function onWordClick(el, event) {
+    var word = el.getAttribute('data-word') || el.textContent.trim();
+    var popup = document.getElementById('dict-popup');
+    var shouldClosePopup = popup.classList.contains('visible') &&
+      _visibleLookupWord === word && el.classList.contains('selected');
+    if (shouldClosePopup) {
+      hidePopup();
+      el.classList.remove('selected');
+      window.getSelection().removeAllRanges();
+      event.preventDefault();
+      return;
+    }
+
     document.querySelectorAll('.word.selected').forEach(function(w) {
       w.classList.remove('selected');
     });
@@ -824,11 +911,10 @@ const PlayerHtml = """
 
     var sel = window.getSelection();
     var range = document.createRange();
-    range.selectNodeContents(el);
+    range.selectNodeContents(el.firstChild || el);
     sel.removeAllRanges();
     sel.addRange(range);
 
-    var word = el.textContent.trim();
     var rect = el.getBoundingClientRect();
     var popW = 360;
     var left = Math.min(rect.left + window.scrollX, window.innerWidth - popW - 20);
@@ -844,15 +930,20 @@ const PlayerHtml = """
     var lineIdx = lineEl ? Array.prototype.indexOf.call(container.children, lineEl) : -1;
     if (lineIdx >= 0 && lineIdx < _lines.length) {
       var timeMs = _lines[lineIdx].timeStartMs;
-      var key = wordKey(word, _currentFile, timeMs);
-      if (_savedWords[key] !== undefined) {
-        window.external.invoke(JSON.stringify({cmd: 'toggleWord', word: word, timeMs: timeMs}));
+      var key = wordKey(word);
+      if (isSavedWord(word)) {
+        lookupWord(word);
+      } else if (_pendingWordSaves[key]) {
         lookupWord(word);
       } else {
+        _pendingWordSaves[key] = true;
         lookupWord(word).then(function(normalized) {
-          if (!normalized.definition) return;
+          if (!normalized.definition) {
+            delete _pendingWordSaves[key];
+            return;
+          }
           window.external.invoke(JSON.stringify({
-            cmd: 'toggleWord',
+            cmd: 'addWord',
             word: word,
             definition: normalized.definition,
             source: normalized.source,
@@ -868,7 +959,7 @@ const PlayerHtml = """
   }
 
   document.addEventListener('click', function(e) {
-    if (!e.target.classList.contains('word')) {
+    if (!e.target.closest('.word')) {
       hidePopup();
       document.querySelectorAll('.word.selected').forEach(function(w) {
         w.classList.remove('selected');
@@ -1261,16 +1352,22 @@ proc handleMessage(w: Webview, arg: string) =
       response["definition"] = %lookupDefinition(msg["word"].getStr())
       discard w.eval(cstring("resolveDictionaryLookup(" & $response & ");"))
 
-    of "toggleWord":
+    of "addWord":
       let word = msg["word"].getStr()
       let file = if msg.hasKey("file"): msg["file"].getStr() else: gCurrentFile
       if file.len > 0:
         let definition = if msg.hasKey("definition"): msg["definition"].getStr() else: ""
         let source = if msg.hasKey("source"): msg["source"].getStr() else: ""
         let timeMs = msg["timeMs"].getInt()
-        discard toggleWord(word, definition, source, file, timeMs)
+        discard addWord(word, definition, source, file, timeMs)
         gCachedWordsJson = $(wordsJson())
         discard w.eval(cstring("updateWordPanel(" & gCachedWordsJson & ");"))
+
+    of "removeWord":
+      let word = msg["word"].getStr()
+      discard removeWord(word)
+      gCachedWordsJson = $(wordsJson())
+      discard w.eval(cstring("updateWordPanel(" & gCachedWordsJson & ");"))
 
     of "setWordDefinition":
       let word = msg["word"].getStr()
