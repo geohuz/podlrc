@@ -2,7 +2,7 @@
 ## The C file (miniaudio_impl.c) compiles the single-header library and
 ## exposes opaque pointer-based functions.
 
-{.compile("miniaudio_impl.c", "").}
+{.compile("native/miniaudio_impl.c", "").}
 
 type
   Engine* = distinct pointer

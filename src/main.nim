@@ -3,7 +3,12 @@ import std/[os, json, strutils, times]
 import webview
 import lrc, audio_engine, system_dictionary
 
-const DictionarySource = "macOS-oaldpe-html-v1"
+const DictionarySource = "macOS-normalized-html-v1"
+const DictionaryFormattersJs =
+  staticRead("dictionary_formatters/common.js") & "\n" &
+  staticRead("dictionary_formatters/noad.js") & "\n" &
+  staticRead("dictionary_formatters/oaldpe_apple.js") & "\n" &
+  staticRead("dictionary_formatters.js")
 
 const DataDir = getHomeDir() / ".podlrc"
 const RecentPath = DataDir / "recent.json"
@@ -95,11 +100,10 @@ proc loadWords(): seq[WordEntry] =
       let data = parseJson(readFile(WordsPath))
       for item in data:
         let source = if item.hasKey("source"): item["source"].getStr() else: ""
-        let keepDefinition = source == DictionarySource
         result.add(WordEntry(
           word: item["word"].getStr(),
-          definition: if keepDefinition and item.hasKey("definition"): item["definition"].getStr() else: "",
-          source: if keepDefinition: source else: "",
+          definition: if item.hasKey("definition"): item["definition"].getStr() else: "",
+          source: source,
           file: item["file"].getStr(),
           timeMs: item["timeMs"].getInt(),
         ))
@@ -118,25 +122,13 @@ proc saveWords(entries: seq[WordEntry]) =
     arr.add(obj)
   writeFile(WordsPath, $arr)
 
-proc clearOutdatedWordDefinitions() =
-  if not fileExists(WordsPath):
-    return
-  var entries = loadWords()
-  var changed = false
-  try:
-    let data = parseJson(readFile(WordsPath))
-    for item in data:
-      let source = if item.hasKey("source"): item["source"].getStr() else: ""
-      if source != DictionarySource and item.hasKey("definition") and
-          item["definition"].getStr().len > 0:
-        changed = true
-        break
-  except:
-    return
-  if changed:
-    saveWords(entries)
+proc normalizeDictionarySource(source: string): string =
+  if source.startsWith(DictionarySource):
+    source
+  else:
+    DictionarySource
 
-proc toggleWord(word, definition, file: string, timeMs: int64): bool =
+proc toggleWord(word, definition, source, file: string, timeMs: int64): bool =
   ## Returns true if word was added, false if removed.
   var entries = loadWords()
   for i in 0..<entries.len:
@@ -147,19 +139,19 @@ proc toggleWord(word, definition, file: string, timeMs: int64): bool =
   entries.add(WordEntry(
     word: word,
     definition: definition,
-    source: DictionarySource,
+    source: normalizeDictionarySource(source),
     file: file,
     timeMs: timeMs
   ))
   saveWords(entries)
   return true
 
-proc setWordDefinition(word, definition, file: string, timeMs: int64): bool =
+proc setWordDefinition(word, definition, source, file: string, timeMs: int64): bool =
   var entries = loadWords()
   for i in 0 ..< entries.len:
     if entries[i].word == word and entries[i].file == file and entries[i].timeMs == timeMs:
       entries[i].definition = definition
-      entries[i].source = DictionarySource
+      entries[i].source = normalizeDictionarySource(source)
       saveWords(entries)
       return true
 
@@ -349,6 +341,10 @@ const PlayerHtml = """
   .dict-example-en { font-style: italic; }
   .dict-example-zh { display: block; color: #fff; }
   .dict-plain-line + .dict-plain-line { margin-top: 6px; }
+  .dict-head { margin-bottom: 7px; }
+  .dict-headword { color: #fff; font-weight: 750; margin-right: 8px; }
+  .dict-pron { color: #aaa; }
+  .dict-pos { color: #999; font-weight: 650; margin: 4px 0 6px; }
   .wp-del {
     flex-shrink: 0; width: 22px; height: 22px; border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
@@ -705,171 +701,7 @@ const PlayerHtml = """
     });
   }
 
-  function escapeRegExp(text) {
-    return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  }
-
-  function removeDictionarySections(text) {
-    var sectionPattern = /(Oxford Collocations Dictionary(?:牛津搭配词典)?|Topics|Extra Examples(?:更多例句)?|Word Origin(?:词源)?)/;
-    var boundaryPattern = /\s[2-9](?=(?:\s|\u00a0|\[|\(|[A-Za-z]))|Oxford Collocations Dictionary|Topics|Extra Examples|Word Origin|Idioms\b|Phrasal Verbs\b|(?:[a-z-]+\s+)?(?:noun|verb|adjective|adverb|combining form)\s+\//i;
-    var section = sectionPattern.exec(text);
-
-    while (section) {
-      var contentStart = section.index + section[0].length;
-      var tail = text.substring(contentStart);
-      var boundary = boundaryPattern.exec(tail);
-      text = text.substring(0, section.index) +
-        (boundary ? tail.substring(boundary.index) : '');
-      section = sectionPattern.exec(text);
-    }
-    return text;
-  }
-
-  function removeDictionaryNoise(doc) {
-    if (!doc) return;
-    doc.querySelectorAll(
-      'script, style, .topic-g, [unbox="snippet"], ' +
-      '[unbox="extra_examples"], [unbox="wordorigin"]'
-    ).forEach(function(node) {
-      node.remove();
-    });
-    doc.querySelectorAll('.box_title, .prefix').forEach(function(node) {
-      var title = node.textContent.replace(/\s+/g, ' ').trim();
-      if (/^(Oxford Collocations Dictionary|Extra Examples|Word Origin|Topics)\b/i.test(title)) {
-        var container = node.closest('.collapse, .unbox, .topic-g') || node.parentElement;
-        if (container) container.remove();
-      }
-    });
-    doc.querySelectorAll('.collapse').forEach(function(node) {
-      if (!node.textContent.trim()) node.remove();
-    });
-  }
-
-  function cleanDictionaryDefinition(definition, word) {
-    var text = (definition || '').trim();
-    if (word) {
-      text = text.replace(new RegExp('^' + escapeRegExp(word) + '\\b\\s*', 'i'), '');
-    }
-
-    text = removeDictionarySections(text);
-
-    return text
-      .replace(/\s{2,}/g, ' ')
-      .replace(/\s+([,.;；])/g, '$1')
-      .trim();
-  }
-
-  function dictionaryNodeText(node, removeSelector) {
-    if (!node) return '';
-    var clone = node.cloneNode(true);
-    if (removeSelector) {
-      clone.querySelectorAll(removeSelector).forEach(function(child) {
-        child.remove();
-      });
-    }
-    return (clone.textContent || '').replace(/\s+/g, ' ').trim();
-  }
-
-  function dictionaryPlainLines(node) {
-    var blockTags = {
-      ADDRESS: true, ARTICLE: true, ASIDE: true, BLOCKQUOTE: true,
-      DD: true, DIV: true, DL: true, DT: true, FIGCAPTION: true,
-      FIGURE: true, FOOTER: true, H1: true, H2: true, H3: true,
-      H4: true, H5: true, H6: true, HEADER: true, HR: true,
-      LI: true, MAIN: true, NAV: true, OL: true, P: true,
-      PRE: true, SECTION: true, TABLE: true, TR: true, UL: true
-    };
-    var chunks = [];
-    function walk(current) {
-      if (current.nodeType === Node.TEXT_NODE) {
-        chunks.push(current.nodeValue);
-        return;
-      }
-      if (current.nodeType !== Node.ELEMENT_NODE) return;
-      if (current.tagName === 'BR' || blockTags[current.tagName]) chunks.push('\n');
-      Array.from(current.childNodes).forEach(walk);
-      if (blockTags[current.tagName]) chunks.push('\n');
-    }
-    walk(node);
-    var seen = {};
-    return chunks.join('')
-      .split(/\n+/)
-      .map(function(line) {
-        return cleanDictionaryDefinition(line, '');
-      })
-      .filter(function(line) {
-        if (!line || seen[line]) return false;
-        seen[line] = true;
-        return true;
-      });
-  }
-
-  function formatDictionaryDefinition(definition, word) {
-    if (!definition) return '';
-
-    var doc = null;
-    if (definition.indexOf('<') >= 0) {
-      doc = new DOMParser().parseFromString(definition, 'text/html');
-      removeDictionaryNoise(doc);
-    }
-
-    var senses = doc ? Array.from(doc.querySelectorAll('li.sense')) : [];
-    if (senses.length === 0) {
-      var lines = doc ? dictionaryPlainLines(doc.body) : [];
-      if (lines.length === 0) {
-        var fallback = doc ? doc.body.textContent : definition;
-        var plain = cleanDictionaryDefinition(fallback, word);
-        if (plain) lines = [plain];
-      }
-      return lines.slice(0, 8).map(function(line) {
-        return '<div class="dict-plain-line">' + esc(line) + '</div>';
-      }).join('');
-    }
-
-    return senses.map(function(sense, index) {
-      var numberNode = sense.querySelector('.iteration');
-      var number = dictionaryNodeText(numberNode) ||
-        sense.getAttribute('sensenum') || String(index + 1);
-      var formNode = sense.querySelector('.sensetop .cf') || sense.querySelector('.cf');
-      var definitionNode = sense.querySelector('.def');
-      var translationNode = sense.querySelector('deft chn');
-      var form = dictionaryNodeText(formNode, 'chn, labelx, xt, unxt');
-      var english = dictionaryNodeText(definitionNode, 'chn, deft, xt, unxt, .sound');
-      var translation = dictionaryNodeText(translationNode);
-      var main = '<div class="dict-main"><span class="dict-number">' +
-        esc(number) + '</span>';
-      if (form) main += '<span class="dict-form">' + esc(form) + '</span>';
-      main += esc(english);
-      if (translation) {
-        main += '<span class="dict-translation">' + esc(translation) + '</span>';
-      }
-      main += '</div>';
-
-      var examples = '';
-      sense.querySelectorAll('ul.examples > li').forEach(function(item) {
-        var phrase = dictionaryNodeText(item.querySelector('.cf'), 'chn, labelx');
-        var exampleNode = item.querySelector('.x, .unx');
-        var example = dictionaryNodeText(
-          exampleNode, 'chn, xt, unxt, .sound, example-audio, example-audio-ai'
-        );
-        var exampleTranslation = dictionaryNodeText(
-          item.querySelector('xt chn, unxt chn')
-        );
-        if (!phrase && !example && !exampleTranslation) return;
-
-        examples += '<div class="dict-example">';
-        if (phrase) examples += '<span class="dict-form">' + esc(phrase) + '</span>';
-        if (example) examples += '<span class="dict-example-en">' + esc(example) + '</span>';
-        if (exampleTranslation) {
-          examples += '<span class="dict-example-zh">' +
-            esc(exampleTranslation) + '</span>';
-        }
-        examples += '</div>';
-      });
-
-      return '<div class="dict-sense">' + main + examples + '</div>';
-    }).join('');
-  }
+""" & DictionaryFormattersJs & """
 
   function resolveDictionaryLookup(response) {
     var resolve = _dictionaryRequests[response.id];
@@ -880,14 +712,16 @@ const PlayerHtml = """
   function hydrateMissingDefinitions() {
     Object.values(_savedWords).forEach(function(entry) {
       var key = wordKey(entry.word, entry.file, entry.timeMs);
-      if ((entry.definition && entry.source === 'macOS-oaldpe-html-v1') || _definitionRequests[key]) return;
+      if (entry.definition || _definitionRequests[key]) return;
       _definitionRequests[key] = true;
       requestDictionaryDefinition(entry.word).then(function(definition) {
         if (!definition) return;
+        var normalized = normalizeDictionaryDefinition(definition, entry.word);
         window.external.invoke(JSON.stringify({
           cmd: 'setWordDefinition',
           word: entry.word,
-          definition: definition,
+          definition: normalized.definition,
+          source: normalized.source,
           file: entry.file,
           timeMs: entry.timeMs
         }));
@@ -969,7 +803,8 @@ const PlayerHtml = """
 
   function lookupWord(word) {
     return requestDictionaryDefinition(word).then(function(definition) {
-      var displayDefinition = formatDictionaryDefinition(definition, word);
+      var normalized = normalizeDictionaryDefinition(definition, word);
+      var displayDefinition = normalized.definition;
       if (_visibleLookupWord === word) {
         var content = displayDefinition
           ? '<div class="dd">' + displayDefinition + '</div>'
@@ -977,7 +812,7 @@ const PlayerHtml = """
         document.getElementById('dict-popup').innerHTML =
           '<div class="dw">' + esc(word) + '</div>' + content;
       }
-      return definition;
+      return normalized;
     });
   }
 
@@ -1014,12 +849,13 @@ const PlayerHtml = """
         window.external.invoke(JSON.stringify({cmd: 'toggleWord', word: word, timeMs: timeMs}));
         lookupWord(word);
       } else {
-        lookupWord(word).then(function(definition) {
-          if (!definition) return;
+        lookupWord(word).then(function(normalized) {
+          if (!normalized.definition) return;
           window.external.invoke(JSON.stringify({
             cmd: 'toggleWord',
             word: word,
-            definition: definition,
+            definition: normalized.definition,
+            source: normalized.source,
             timeMs: timeMs
           }));
         });
@@ -1430,17 +1266,19 @@ proc handleMessage(w: Webview, arg: string) =
       let file = if msg.hasKey("file"): msg["file"].getStr() else: gCurrentFile
       if file.len > 0:
         let definition = if msg.hasKey("definition"): msg["definition"].getStr() else: ""
+        let source = if msg.hasKey("source"): msg["source"].getStr() else: ""
         let timeMs = msg["timeMs"].getInt()
-        discard toggleWord(word, definition, file, timeMs)
+        discard toggleWord(word, definition, source, file, timeMs)
         gCachedWordsJson = $(wordsJson())
         discard w.eval(cstring("updateWordPanel(" & gCachedWordsJson & ");"))
 
     of "setWordDefinition":
       let word = msg["word"].getStr()
       let definition = msg["definition"].getStr()
+      let source = if msg.hasKey("source"): msg["source"].getStr() else: ""
       let file = msg["file"].getStr()
       let timeMs = msg["timeMs"].getInt()
-      if definition.len > 0 and setWordDefinition(word, definition, file, timeMs):
+      if definition.len > 0 and setWordDefinition(word, definition, source, file, timeMs):
         gCachedWordsJson = $(wordsJson())
         discard w.eval(cstring("updateWordPanel(" & gCachedWordsJson & ");"))
 
@@ -1460,8 +1298,6 @@ proc handleMessage(w: Webview, arg: string) =
     echo "handleMessage error: ", getCurrentExceptionMsg()
 
 proc main() =
-  clearOutdatedWordDefinitions()
-
   # Resolve the previous session before the page can send its ready message.
   let cfg = loadConfig()
   if cfg.hasKey("lastFile"):

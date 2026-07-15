@@ -1,5 +1,5 @@
 when defined(macosx):
-  {.compile("macos_dictionary.c", "").}
+  {.compile("native/macos_dictionary.c", "").}
 
   proc podDictionaryLookup(word: cstring): cstring {.
     importc: "pod_dictionary_lookup", cdecl
