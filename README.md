@@ -153,11 +153,6 @@ src/
     oaldpe_apple.js                 # oaldpe-apple formatter
   native/
     macos_dictionary.c              # macOS Dictionary bridge
-    miniaudio_impl.c                # miniaudio bridge
-  third_party/
-    miniaudio.h                     # vendored miniaudio header
-tools/
-  verify_audio.nim                  # audio validation helper
 tests/
   tui_assets.nim                    # embedded frontend assembly checks
 docs/
@@ -171,16 +166,16 @@ documented in [docs/ipc.md](docs/ipc.md).
 
 ### Frontend UI
 
-The frontend uses vendored [VanJS](https://vanjs.org/) 1.6.0 and VanX 0.6.3.
+The frontend uses vendored [VanJS](https://vanjs.org/) 1.6.0 and VanX 0.6.3,
+plus the browser's native HTMLAudioElement for MP3 playback.
 They are embedded into the executable by `ui_assets.nim`, so the player never
 uses a CDN, Node.js, or a build step at runtime. Build UI with small component
 functions and native DOM nodes from `van.tags`; use `vanX.reactive()` for
 field-level presentation state. JSX is not used.
 
-Keep the LRC list stable after a file loads. The 400ms playback update must only
-change the active lyric line, position, and playback controls. Rebuilding all
-lyrics during polling breaks scroll position, word selection, and dictionary
-popups.
+Keep the LRC list stable after a file loads. The current position comes from
+audio events in the WebView; it is not polled through Nim. Rebuilding all lyrics
+during playback breaks scroll position, word selection, and dictionary popups.
 
 ### Build
 
@@ -211,14 +206,6 @@ quarantine attribute:
 
 ```sh
 xattr -d com.apple.quarantine podlrc
-```
-
-To compile the audio validation helper:
-
-```sh
-nim c --path:src --app:console \
-  --passL:"-framework CoreAudio -framework AudioToolbox" \
-  tools/verify_audio.nim
 ```
 
 ### Dictionary formatter registry

@@ -4,6 +4,7 @@ var div = tags.div;
 var span = tags.span;
 var button = tags.button;
 var input = tags.input;
+var audioTag = tags.audio;
 var svgTags = van.tags('http://www.w3.org/2000/svg');
 var svg = svgTags.svg;
 var path = svgTags.path;
@@ -25,7 +26,9 @@ var app = vanX.reactive({
       lines: [],
       activeIndex: -1,
       lrcSize: 100,
-      currentFile: ''
+      currentFile: '',
+      audio: null,
+      pendingPosition: 0
     },
     recent: {
       files: []
@@ -280,12 +283,104 @@ function finishProgressDrag(event) {
   var position = app.player.duration > 0 ? Math.round((event.target.value / 1000) * app.player.duration) : 0;
   app.player.position = position;
   app.player.seeking = false;
-  if (app.player.duration > 0) sendCommand('seek', {ms: position});
+  if (app.runtime.player.audio && app.player.duration > 0) {
+    app.runtime.player.audio.currentTime = position / 1000;
+    persistPlaybackPosition();
+  }
 }
 
 function onVolumeInput(event) {
   app.player.volume = Number(event.target.value);
-  sendCommand('setVolume', {vol: app.player.volume / 100});
+  if (app.runtime.player.audio) app.runtime.player.audio.volume = app.player.volume / 100;
+}
+
+function updateActiveLine(positionMs) {
+  var index = findActiveIndex(app.runtime.player.lines, positionMs);
+  if (index === app.runtime.player.activeIndex) return;
+  var container = document.getElementById('lrc-container');
+  var previous = container.querySelector('.lrc-line.active');
+  if (previous) previous.classList.remove('active');
+  app.runtime.player.activeIndex = index;
+  if (index >= 0 && index < container.children.length) {
+    var line = container.children[index];
+    line.classList.add('active');
+    line.scrollIntoView({block: 'center', behavior: 'smooth'});
+  }
+}
+
+function findActiveIndex(lines, positionMs) {
+  var index = -1;
+  for (var i = 0; i < lines.length; i++) {
+    if (lines[i].timeStartMs > positionMs) break;
+    index = i;
+  }
+  return index;
+}
+
+function persistPlaybackPosition() {
+  var audio = app.runtime.player.audio;
+  if (!audio || !app.runtime.player.currentFile) return;
+  sendCommand('savePlaybackState', {
+    file: app.runtime.player.currentFile,
+    position: Math.round(audio.currentTime * 1000)
+  });
+}
+
+function onAudioTimeUpdate() {
+  var audio = app.runtime.player.audio;
+  if (!audio || app.player.seeking) return;
+  app.player.position = Math.round(audio.currentTime * 1000);
+  updateActiveLine(app.player.position);
+}
+
+function onAudioMetadata() {
+  var audio = app.runtime.player.audio;
+  app.player.duration = Math.round(audio.duration * 1000);
+  if (app.runtime.player.pendingPosition > 0) {
+    audio.currentTime = app.runtime.player.pendingPosition / 1000;
+    app.runtime.player.pendingPosition = 0;
+  }
+}
+
+function onAudioPlay() { app.player.playing = true; }
+function onAudioPause() {
+  app.player.playing = false;
+  persistPlaybackPosition();
+}
+function onAudioEnded() {
+  app.player.playing = false;
+  persistPlaybackPosition();
+}
+function onAudioVolume() {
+  if (app.runtime.player.audio) app.player.volume = Math.round(app.runtime.player.audio.volume * 100);
+}
+
+function AudioPlayer() {
+  var audio = audioTag({id: 'audio-player', preload: 'metadata',
+    onloadedmetadata: onAudioMetadata,
+    ontimeupdate: onAudioTimeUpdate,
+    onplay: onAudioPlay,
+    onpause: onAudioPause,
+    onended: onAudioEnded,
+    onvolumechange: onAudioVolume
+  });
+  app.runtime.player.audio = audio;
+  return audio;
+}
+
+function fileUrl(path) {
+  return 'file://' + encodeURI(path).replace(/#/g, '%23').replace(/\?/g, '%3F');
+}
+
+function loadAudio(path, position) {
+  var audio = app.runtime.player.audio;
+  if (!audio || !path) return;
+  var url = fileUrl(path);
+  audio.pause();
+  audio.src = url;
+  audio.volume = app.player.volume / 100;
+  app.runtime.player.pendingPosition = position || 0;
+  audio.load();
 }
 
 function Playbar() {
@@ -296,13 +391,22 @@ function Playbar() {
     if (app.player.volumeDragging) classes.push('volume-dragging');
     return classes.join(' ');
   }},
-    button({class: 'btn-sm', title: 'Back 10s', onclick: function() { sendCommand('seekBack'); }},
+    AudioPlayer(),
+    button({class: 'btn-sm', title: 'Back 10s', onclick: function() {
+      var audio = app.runtime.player.audio;
+      if (audio) audio.currentTime = Math.max(audio.currentTime - 10, 0);
+    }},
       svg({viewBox: '0 0 24 24', fill: 'currentColor'}, polygon({points: '13,6 7,12 13,18'}), polygon({points: '19,6 19,18 13,12', opacity: '0.5'}))
     ),
     button({class: 'btn-lg', title: function() { return app.player.playing ? 'Pause' : 'Play'; }, onclick: function() {
-      sendCommand(app.player.playing ? 'pause' : 'play');
+      var audio = app.runtime.player.audio;
+      if (!audio) return;
+      if (audio.paused) audio.play(); else audio.pause();
     }}, PlayIcon()),
-    button({class: 'btn-sm', title: 'Forward 10s', onclick: function() { sendCommand('seekFwd'); }},
+    button({class: 'btn-sm', title: 'Forward 10s', onclick: function() {
+      var audio = app.runtime.player.audio;
+      if (audio) audio.currentTime = Math.min(audio.currentTime + 10, audio.duration || audio.currentTime + 10);
+    }},
       svg({viewBox: '0 0 24 24', fill: 'currentColor'}, polygon({points: '11,6 17,12 11,18'}), polygon({points: '5,6 5,18 11,12', opacity: '0.5'}))
     ),
     div({id: 'progress-group'},
@@ -663,7 +767,8 @@ lrcContainer.addEventListener('click', function(event) {
   if (closestEventTarget(event, '.lrc-time')) {
     event.stopPropagation();
     clearWordPopup();
-    sendCommand('seek', {ms: lyric.timeStartMs});
+    if (app.runtime.player.audio) app.runtime.player.audio.currentTime = lyric.timeStartMs / 1000;
+    persistPlaybackPosition();
     return;
   }
 
@@ -748,21 +853,14 @@ function updateState(data) {
     }
   }
 
+  if (data.audioPath !== undefined) {
+    app.runtime.player.currentFile = data.audioPath;
+    loadAudio(data.audioPath, data.position || 0);
+  }
+
   if (data.lines !== undefined) {
     renderLines(data.lines);
     updateWordHighlights();
-  }
-
-  if (data.activeIndex !== undefined && data.activeIndex !== app.runtime.player.activeIndex) {
-    var container = document.getElementById('lrc-container');
-    var prev = container.querySelector('.lrc-line.active');
-    if (prev) prev.classList.remove('active');
-    app.runtime.player.activeIndex = data.activeIndex;
-    if (app.runtime.player.activeIndex >= 0 && app.runtime.player.activeIndex < container.children.length) {
-      var el = container.children[app.runtime.player.activeIndex];
-      el.classList.add('active');
-      el.scrollIntoView({ block: 'center', behavior: 'smooth' });
-    }
   }
 
   // Volume sync (initial only — don't fight user dragging)
@@ -770,14 +868,9 @@ function updateState(data) {
     app.player.volume = Math.round(data.volume * 100);
   }
 
-  if (data.duration !== undefined) {
-    app.player.duration = data.duration;
-  }
-  if (data.playing !== undefined) {
-    app.player.playing = data.playing;
-  }
-  if (data.position !== undefined && !app.player.seeking) {
+  if (data.position !== undefined && !app.player.seeking && data.audioPath === undefined) {
     app.player.position = data.position;
+    updateActiveLine(data.position);
   }
 
   if (data.recent) {
@@ -786,11 +879,6 @@ function updateState(data) {
   if (data.words) {
     updateWordPanel(data.words);
   }
-}
-
-/* ── polling ── */
-function pollState() {
-  sendCommand('getState');
 }
 
 function endVolumeDrag() {
@@ -804,24 +892,25 @@ document.addEventListener('keydown', function(e) {
   var meta = e.metaKey || e.ctrlKey;
   if (e.code === 'Space' && !meta) {
     e.preventDefault();
-    sendCommand(app.player.playing ? 'pause' : 'play');
+    var audio = app.runtime.player.audio;
+    if (audio) { if (audio.paused) audio.play(); else audio.pause(); }
   } else if (e.code === 'ArrowLeft' && !meta) {
     e.preventDefault();
-    sendCommand('seekBack');
+    if (app.runtime.player.audio) app.runtime.player.audio.currentTime = Math.max(app.runtime.player.audio.currentTime - 10, 0);
   } else if (e.code === 'ArrowRight' && !meta) {
     e.preventDefault();
-    sendCommand('seekFwd');
+    if (app.runtime.player.audio) app.runtime.player.audio.currentTime += 10;
   } else if ((e.code === 'ArrowUp' || e.key === 'ArrowUp') && !meta) {
     e.preventDefault();
     if (app.runtime.player.lines.length > 0) {
       var idx = app.runtime.player.activeIndex > 0 ? app.runtime.player.activeIndex - 1 : 0;
-      sendCommand('seek', {ms: app.runtime.player.lines[idx].timeStartMs});
+      if (app.runtime.player.audio) app.runtime.player.audio.currentTime = app.runtime.player.lines[idx].timeStartMs / 1000;
     }
   } else if ((e.code === 'ArrowDown' || e.key === 'ArrowDown') && !meta) {
     e.preventDefault();
     if (app.runtime.player.lines.length > 0) {
       var idx = app.runtime.player.activeIndex >= 0 && app.runtime.player.activeIndex < app.runtime.player.lines.length - 1 ? app.runtime.player.activeIndex + 1 : app.runtime.player.lines.length - 1;
-      sendCommand('seek', {ms: app.runtime.player.lines[idx].timeStartMs});
+      if (app.runtime.player.audio) app.runtime.player.audio.currentTime = app.runtime.player.lines[idx].timeStartMs / 1000;
     }
   } else if (meta && (e.code === 'Equal' || e.code === 'NumpadAdd')) {
     e.preventDefault();
@@ -837,10 +926,11 @@ document.addEventListener('keydown', function(e) {
   } else if (e.code === 'Enter' && !meta) {
     e.preventDefault();
     if (app.runtime.player.lines.length > 0 && app.runtime.player.activeIndex >= 0 && app.runtime.player.activeIndex < app.runtime.player.lines.length) {
-      sendCommand('seek', {ms: app.runtime.player.lines[app.runtime.player.activeIndex].timeStartMs});
+      if (app.runtime.player.audio) app.runtime.player.audio.currentTime = app.runtime.player.lines[app.runtime.player.activeIndex].timeStartMs / 1000;
     }
   }
 }, true);
 
-setInterval(pollState, 400);
-pollState();
+setInterval(persistPlaybackPosition, 5000);
+window.addEventListener('pagehide', persistPlaybackPosition);
+window.addEventListener('beforeunload', persistPlaybackPosition);

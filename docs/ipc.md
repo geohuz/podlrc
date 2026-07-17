@@ -12,11 +12,11 @@ or bundler dependency. `app.js` keeps the stable bridge functions
 (`sendCommand`, `updateState`, `updateWordPanel`, and `resolveDictionaryLookup`)
 as the host-facing API.
 
-`updateState()` is called about every 400ms while playing. LRC lines are created
-only when the host supplies `lines`; polling must update the existing active
-line rather than rebuild the lyrics list. The recent-files menu, Vocabulary
-panel, dictionary popup, and playback controls stay mounted and react to their
-own field-level presentation state.
+Playback is owned by the browser's native `<audio>` element. The host sends an
+`audioPath` and LRC lines when a file opens; audio events update position,
+duration, playing state, volume, and the active lyric locally. There is no
+400ms playback polling IPC. Playback position is sent back through the
+throttled `savePlaybackState` command.
 
 The frontend has one `app = vanX.reactive(...)` state root. Presentation fields
 such as panel visibility, Vocabulary entries, popup data, and playback controls
@@ -31,7 +31,8 @@ The frontend sends one JSON object at a time through the centralized
 `sendCommand()` bridge:
 
 ```js
-sendCommand("seek", {ms: 12000});
+// Playback seeking is local to the browser audio element.
+audio.currentTime = 12;
 ```
 
 `sendCommand()` is the only frontend function that calls
@@ -57,23 +58,16 @@ Every message requires a string `cmd` field.
 
 | Command | Fields | Host behavior | Response |
 |---|---|---|---|
-| `getState` | none | Reads the current playback position and active lyric | `updateState()` when audio is loaded |
 | `open` | none | Opens the native MP3 file dialog | Full `updateState()` after selection |
 | `openRecent` | `path: string` | Opens a recent file and restores its position | Full `updateState()` |
-| `play` | none | Starts playback | None |
-| `pause` | none | Pauses playback | None |
-| `toggle` | none | Toggles playback | None |
-| `seek` | `ms: int` | Seeks to an absolute millisecond position | None |
-| `seekBack` | none | Seeks backward 10 seconds | None |
-| `seekFwd` | none | Seeks forward 10 seconds | None |
-| `setVolume` | `vol: float` | Sets volume using the `0.0..1.0` scale | None |
+| `savePlaybackState` | `file: string`, `position: int` | Persists the browser audio position | None |
 | `saveConfig` | `lrcSize?: int`, `windowWidth?: int`, `windowHeight?: int` | Persists supported UI settings | None |
 | `lookupWord` | `id: int`, `word: string`, `context?: string`, `offset?: int` | Queries macOS Dictionary; context lookup is used only when both optional fields are present | `resolveDictionaryLookup()` |
 | `addWord` | `word: string`, `timeMs: int`, `definition?: string`, `source?: string`, `file?: string` | Adds or updates a vocabulary entry; `file` defaults to the current audio file | `updateWordPanel()` |
 | `removeWord` | `word: string` | Removes the word case-insensitively | `updateWordPanel()` |
 | `setWordDefinition` | `word: string`, `definition: string`, `file: string`, `timeMs: int`, `source?: string` | Replaces the stored definition for an existing word | `updateWordPanel()` on success |
 | `openWordRef` | `file: string`, `ms: int` | Opens the source podcast and seeks to the saved position | Full `updateState()` |
-| `ready` | none | Finishes previous-session restoration after the DOM is ready | Full `updateState()` when a session exists |
+| `ready` | none | Legacy no-op retained for older embedded pages | None |
 
 Example correlated dictionary lookup:
 
@@ -102,14 +96,12 @@ when they are absent.
 | `recent` | `string[]` | Replaces the recent file list |
 | `words` | `WordEntry[]` | Replaces the vocabulary cache |
 | `currentFile` | `string` | Absolute path of the active audio file |
-| `position` | `int` | Current position in milliseconds |
-| `duration` | `int` | Audio duration in milliseconds |
-| `playing` | `boolean` | Current playback state |
-| `activeIndex` | `int` | Highlighted lyric index, or `-1` |
-| `volume` | `float` | Current volume on the `0.0..1.0` scale |
+| `audioPath` | `string` | Absolute path loaded by the browser `<audio>` element |
+| `position` | `int` | Resume position in milliseconds for initial file loading |
+| `activeIndex` | `int` | Initial highlighted lyric index, or `-1` |
 
-The polling response normally contains only `position`, `playing`, and
-`activeIndex`. File loading sends the full state.
+File loading sends the full state. Subsequent playback state is produced by
+the browser audio element and is not sent as host polling responses.
 
 ### `updateWordPanel(words)`
 

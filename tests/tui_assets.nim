@@ -34,7 +34,12 @@ block assembles_embedded_player:
   doAssert "onclick: toggleRecentDropdown" in html
   doAssert "oninput: onProgressInput" in html
   doAssert "windowWidth: window.innerWidth" in html
-  doAssert "clearWordPopup();\n    sendCommand('seek'" in html
+  doAssert "id: 'audio-player'" in html
+  doAssert "function loadAudio(path, position)" in html
+  doAssert "sendCommand('savePlaybackState'" in html
+  doAssert "app.runtime.player.audio.currentTime = lyric.timeStartMs / 1000" in html
+  doAssert "setInterval(persistPlaybackPosition, 5000)" in html
+  doAssert "sendCommand('seek'" notin html
   doAssert "van.derive" notin html
   doAssert "btn.style.display" notin html
   doAssert "delete app.runtime.vocabulary.definitionRequests" notin html

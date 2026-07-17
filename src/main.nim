@@ -1,7 +1,7 @@
 import std/[os, json, strutils, times]
 
 import webview
-import lrc, audio_engine, system_dictionary, ui_assets
+import lrc, system_dictionary, ui_assets
 
 const DictionarySource = "macOS-normalized-html-v1"
 
@@ -256,6 +256,7 @@ proc buildResumeState(cfg: JsonNode): JsonNode =
   state["lines"] = linesJson(lrc)
   state["words"] = wordsJson()
   state["currentFile"] = %path
+  state["audioPath"] = %path
   state["position"] = %posMs
   state["playing"] = %false
   state["activeIndex"] = %findActiveIndex(lrc, posMs)
@@ -275,19 +276,13 @@ proc buildHtml(): string =
   config["initialState"] = initialState
   result = buildPlayerHtml($config)
 
-var gEngine: AudioEngine
 var gLrc: LrcFile
 var gCurrentFile: string
 var gPendingResumeFile: string
-var gPendingResumePos: int64
 
 var gCachedLinesJson: string
 var gCachedRecentJson: string
 var gCachedWordsJson: string
-
-proc saveCurrentPlaybackState() =
-  if gCurrentFile.len > 0 and gEngine != nil:
-    savePlaybackState(gCurrentFile, gEngine.position())
 
 proc buildFullStateJson(): string =
   let linesArr = linesJson(gLrc)
@@ -300,11 +295,9 @@ proc buildFullStateJson(): string =
   js["recent"] = parseJson(gCachedRecentJson)
   js["words"] = parseJson(gCachedWordsJson)
   js["currentFile"] = %gCurrentFile
-  js["position"] = %(if gEngine.isNil: 0'i64 else: gEngine.position())
-  js["duration"] = %(if gEngine.isNil: 0'i64 else: gEngine.duration())
-  js["playing"] = %(if not gEngine.isNil: gEngine.isPlaying() else: false)
-  js["activeIndex"] = %(if gEngine.isNil: -1 else: findActiveIndex(gLrc, gEngine.position()))
-  js["volume"] = %(if gEngine.isNil: 0.8 else: gEngine.getVolume())
+  js["audioPath"] = %gCurrentFile
+  js["position"] = %loadPlaybackPosition(gCurrentFile)
+  js["activeIndex"] = %findActiveIndex(gLrc, loadPlaybackPosition(gCurrentFile))
   result = $js
 
 proc pushFullState(w: Webview) =
@@ -312,12 +305,7 @@ proc pushFullState(w: Webview) =
   discard w.eval(cstring("updateState(" & json & ");"))
 
 proc loadFile(w: Webview, path: string, seekMs: int64 = 0) =
-  saveCurrentPlaybackState()
   w.setTitle(path.extractFilename().cstring)
-  if gEngine != nil:
-    gEngine.delete()
-    gEngine = nil
-  gEngine = newAudioEngine(path)
   addRecent(path)
   let lrcPath = path.changeFileExt("lrc")
   if fileExists(lrcPath):
@@ -329,12 +317,6 @@ proc loadFile(w: Webview, path: string, seekMs: int64 = 0) =
     )
   gLrc.title = path.extractFilename()
   gCurrentFile = path
-  if seekMs > 0:
-    gEngine.seek(seekMs)
-    sleep(100)
-    gEngine.pause()
-  else:
-    gEngine.play()
   savePlaybackState(path, max(seekMs, 0'i64))
   pushFullState(w)
 
@@ -344,14 +326,6 @@ proc handleMessage(w: Webview, arg: string) =
     let cmd = msg["cmd"].getStr()
 
     case cmd
-    of "getState":
-      if gEngine != nil:
-        var js = newJObject()
-        js["position"] = %gEngine.position()
-        js["playing"] = %gEngine.isPlaying()
-        js["activeIndex"] = %findActiveIndex(gLrc, gEngine.position())
-        discard w.eval(cstring("updateState(" & $js & ");"))
-
     of "open":
       let path = w.dialogOpen("Open MP3 File")
       if path.len > 0 and fileExists(path):
@@ -362,41 +336,11 @@ proc handleMessage(w: Webview, arg: string) =
       if fileExists(path):
         loadFile(w, path, loadPlaybackPosition(path))
 
-    of "play":
-      if gEngine != nil:
-        gEngine.play()
-
-    of "pause":
-      if gEngine != nil:
-        gEngine.pause()
-
-    of "seek":
-      if gEngine != nil:
-        let ms = msg["ms"].getInt()
-        gEngine.seek(ms)
-
-    of "seekBack":
-      if gEngine != nil:
-        let pos = gEngine.position()
-        gEngine.seek(max(pos - 10000, 0'i64))
-
-    of "seekFwd":
-      if gEngine != nil:
-        let pos = gEngine.position()
-        let dur = gEngine.duration()
-        gEngine.seek(min(pos + 10000, dur))
-
-    of "toggle":
-      if gEngine != nil:
-        if gEngine.isPlaying():
-          gEngine.pause()
-        else:
-          gEngine.play()
-
-    of "setVolume":
-      if gEngine != nil:
-        let vol = msg["vol"].getFloat()
-        gEngine.setVolume(float32(vol))
+    of "savePlaybackState":
+      let path = msg["file"].getStr()
+      let position = msg["position"].getInt()
+      if path.len > 0 and fileExists(path):
+        savePlaybackState(path, position)
 
     of "saveConfig":
       if msg.hasKey("lrcSize"):
@@ -450,8 +394,7 @@ proc handleMessage(w: Webview, arg: string) =
         loadFile(w, refFile, refMs)
 
     of "ready":
-      if gPendingResumeFile.len > 0 and fileExists(gPendingResumeFile):
-        loadFile(w, gPendingResumeFile, gPendingResumePos)
+      discard
 
     else: discard
 
@@ -463,10 +406,8 @@ proc main() =
   let cfg = loadConfig()
   if cfg.hasKey("lastFile"):
     let lastFile = cfg["lastFile"].getStr()
-    let lastPos = if cfg.hasKey("lastPosMs"): cfg["lastPosMs"].getInt() else: 0'i64
     if fileExists(lastFile):
       gPendingResumeFile = lastFile
-      gPendingResumePos = lastPos
 
   let html = buildHtml()
   let stamp = getTime().toUnix()
@@ -488,8 +429,6 @@ proc main() =
     quit(1)
 
   w.run()
-
-  saveCurrentPlaybackState()
 
   removeFile(htmlPath)
 
