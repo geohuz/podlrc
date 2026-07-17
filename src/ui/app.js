@@ -1,3 +1,18 @@
+// VanJS 1.6.0 is vendored with the application so the UI remains offline.
+var tags = van.tags;
+var div = tags.div;
+var span = tags.span;
+var button = tags.button;
+
+// Reactive presentation state. Audio, DOM, and request bookkeeping stay in
+// `state` below so high-frequency playback updates never rebuild lyric lines.
+var ui = vanX.reactive({
+  recent: {files: [], open: false},
+  vocabulary: {entries: [], filter: 'current', open: false},
+  dictionary: {visible: false, word: '', definition: '', loading: false},
+  player: {playing: false, position: 0, duration: 0, volume: 80}
+});
+
 var state = {
   player: {
     lines: [],
@@ -42,19 +57,9 @@ function fmtTime(ms) {
   return m.toString().padStart(2, '0') + ':' + (s % 60).toString().padStart(2, '0');
 }
 
-function esc(s) {
-  var d = document.createElement('div');
-  d.textContent = s;
-  return d.innerHTML;
-}
-
-function cloneTemplate(id) {
-  var template = document.getElementById(id);
-  return template.content.cloneNode(true);
-}
-
-function cloneTemplateElement(id) {
-  return cloneTemplate(id).firstElementChild;
+function mount(container, component) {
+  container.replaceChildren();
+  van.add(container, component);
 }
 
 function closestEventTarget(event, selector) {
@@ -68,28 +73,102 @@ function podcastTitle(path) {
   return path.split('/').pop().replace(/\.[^.]+$/i, '') || 'Current';
 }
 
+function RecentDropdown() {
+  return div({class: 'recent-dropdown-content'}, function() {
+    return div(
+      div({class: 'rd-header'}, 'Recent Files'),
+      div({class: 'recent-items'}, ui.recent.files.map(function(path, index) {
+        var slash = path.lastIndexOf('/');
+        return div({class: 'recent-item', 'data-index': String(index)},
+          span({class: 'ri-name'}, path.slice(slash + 1).replace(/\.mp3$/i, '')),
+          span({class: 'ri-path'}, slash >= 0 ? path.slice(0, slash) : '')
+        );
+      }))
+    );
+  });
+}
+
+function VocabularyDefinition(entry) {
+  var definition = span({class: 'wp-definition'});
+  var formatted = formatDictionaryDefinition(entry.definition, entry.word);
+  if (formatted) {
+    definition.innerHTML = formatted;
+  } else {
+    definition.textContent = 'Looking up definition...';
+  }
+  return definition;
+}
+
+function VocabularyItem(entry) {
+  return div({class: 'wp-item', 'data-file': entry.file, 'data-ms': String(entry.timeMs)},
+    span({class: 'wp-toggle', title: 'Expand definition'}, '\u25b6'),
+    span({class: 'wp-word'}, entry.word),
+    VocabularyDefinition(entry),
+    span({class: 'wp-del', 'data-word': entry.word, title: 'Remove from Vocabulary'}, '\u00d7')
+  );
+}
+
+function VocabularyPanel() {
+  return div({class: 'vocabulary-panel-content'}, function() {
+    var entries = ui.vocabulary.entries;
+    var title = podcastTitle(state.player.currentFile);
+    var filter = ui.vocabulary.filter;
+    return div({class: 'wp-list'},
+      div({class: 'wp-header'},
+        div({class: 'rd-header'}, 'Vocabulary'),
+        div({class: 'wp-filter'},
+          button({type: 'button', 'data-filter': 'current', title: title,
+            class: filter === 'current' ? 'active' : ''}, title),
+          button({type: 'button', 'data-filter': 'all',
+            class: filter === 'all' ? 'active' : ''}, 'All')
+        )
+      ),
+      div({class: 'wp-empty', hidden: entries.length !== 0}, 'No saved words for this podcast.'),
+      div({class: 'wp-items'}, entries.map(VocabularyItem))
+    );
+  });
+}
+
+function LyricWord(word, offset) {
+  return span({class: 'word', 'data-word': word, 'data-offset': String(offset)}, word);
+}
+
+function LyricLine(line, index) {
+  return div({class: 'lrc-line', 'data-index': String(index)},
+    span({class: 'lrc-time'}, fmtTime(line.timeStartMs)),
+    span({class: 'lrc-text'}, buildWordNodes(line.text))
+  );
+}
+
+function PopupDefinition(definition) {
+  var content = div({class: 'dd'});
+  content.innerHTML = definition;
+  return content;
+}
+
+function DictionaryPopup() {
+  return div({class: 'dict-popup-content'}, function() {
+    if (ui.dictionary.loading) {
+      return div(div({class: 'dw'}, ui.dictionary.word), div({class: 'dm'}, 'Looking up...'));
+    }
+    if (ui.dictionary.definition) {
+      return div(div({class: 'dw'}, ui.dictionary.word), PopupDefinition(ui.dictionary.definition));
+    }
+    return div(div({class: 'dw'}, ui.dictionary.word), div({class: 'dm'}, 'No definition found'));
+  });
+}
+
 /* ── recent files ── */
 function renderRecentDropdown() {
-  var dd = document.getElementById('recent-dropdown');
   var btn = document.getElementById('btn-recent');
   if (state.recent.files.length === 0) {
     btn.style.display = 'none';
-    dd.classList.remove('open');
-    dd.replaceChildren();
+    ui.recent.open = false;
+    ui.recent.files = [];
     return;
   }
   btn.style.display = '';
-  dd.replaceChildren(cloneTemplate('recent-dropdown-template'));
-  var items = dd.querySelector('.recent-items');
-  state.recent.files.forEach(function(p, i) {
-    var name = p.split('/').pop().replace(/\.mp3$/i, '');
-    var dir = p.substring(0, p.lastIndexOf('/'));
-    var el = cloneTemplateElement('recent-item-template');
-    el.dataset.index = String(i);
-    el.querySelector('.ri-name').textContent = name;
-    el.querySelector('.ri-path').textContent = dir;
-    items.appendChild(el);
-  });
+  ui.recent.files = state.recent.files;
 }
 
 function updateRecent(recent) {
@@ -109,9 +188,8 @@ function updateRecent(recent) {
 function toggleRecentDropdown(e) {
   e.stopPropagation();
   clearWordPopup();
-  document.getElementById('word-panel').classList.remove('open');
-  var dd = document.getElementById('recent-dropdown');
-  dd.classList.toggle('open');
+  ui.vocabulary.open = false;
+  ui.recent.open = !ui.recent.open;
 }
 
 /* ── saved words ── */
@@ -136,13 +214,12 @@ function updateWordPanel(words) {
 }
 
 function renderWordPanel() {
-  var panel = document.getElementById('word-panel');
   var btn = document.getElementById('btn-words');
   var allEntries = Object.values(state.vocabulary.words);
   if (allEntries.length === 0) {
     btn.style.display = 'none';
-    panel.classList.remove('open');
-    panel.replaceChildren();
+    ui.vocabulary.open = false;
+    ui.vocabulary.entries = [];
     return;
   }
   btn.style.display = '';
@@ -151,38 +228,7 @@ function renderWordPanel() {
     entries = allEntries.filter(function(e) { return e.file === state.player.currentFile; });
   }
   entries.sort(function(a, b) { return a.word.localeCompare(b.word); });
-  var title = podcastTitle(state.player.currentFile);
-  var content = cloneTemplate('word-panel-template');
-  var currentButton = content.querySelector('[data-filter="current"]');
-  var allButton = content.querySelector('[data-filter="all"]');
-  var empty = content.querySelector('.wp-empty');
-  var items = content.querySelector('.wp-items');
-
-  currentButton.textContent = title;
-  currentButton.title = title;
-  currentButton.classList.toggle('active', state.vocabulary.filter === 'current');
-  allButton.classList.toggle('active', state.vocabulary.filter === 'all');
-  empty.hidden = entries.length !== 0;
-
-  entries.forEach(function(e) {
-    var el = cloneTemplateElement('word-item-template');
-    var definition = el.querySelector('.wp-definition');
-    var remove = el.querySelector('.wp-del');
-
-    el.dataset.file = e.file;
-    el.dataset.ms = String(e.timeMs);
-    el.querySelector('.wp-word').textContent = e.word;
-    var formattedDefinition = formatDictionaryDefinition(e.definition, e.word);
-    if (formattedDefinition) {
-      definition.innerHTML = formattedDefinition;
-    } else {
-      definition.textContent = 'Looking up definition...';
-    }
-    remove.dataset.word = e.word;
-    remove.title = 'Remove from Vocabulary';
-    items.appendChild(el);
-  });
-  panel.replaceChildren(content);
+  ui.vocabulary.entries = entries;
 }
 
 function setWordFilter(ev, filter) {
@@ -191,6 +237,7 @@ function setWordFilter(ev, filter) {
     ev.stopPropagation();
   }
   state.vocabulary.filter = filter === 'all' ? 'all' : 'current';
+  ui.vocabulary.filter = state.vocabulary.filter;
   renderWordPanel();
 }
 
@@ -266,7 +313,7 @@ function updateWordHighlights() {
       el.classList.toggle('saved', saved);
       var remove = el.querySelector('.word-remove');
       if (saved && !remove) {
-        el.appendChild(cloneTemplateElement('word-remove-template'));
+        el.appendChild(span({class: 'word-remove', title: 'Remove from Vocabulary'}, '\u00d7'));
       } else if (!saved && remove) {
         remove.remove();
       }
@@ -277,14 +324,14 @@ function updateWordHighlights() {
 function toggleWordPanel(e) {
   e.stopPropagation();
   clearWordPopup();
-  document.getElementById('recent-dropdown').classList.remove('open');
-  var panel = document.getElementById('word-panel');
-  var opening = !panel.classList.contains('open');
+  ui.recent.open = false;
+  var opening = !ui.vocabulary.open;
   if (opening) {
     state.vocabulary.filter = 'current';
+    ui.vocabulary.filter = 'current';
     renderWordPanel();
   }
-  panel.classList.toggle('open');
+  ui.vocabulary.open = opening;
 }
 
 /* ── word splitting ── */
@@ -294,11 +341,7 @@ function buildWordNodes(text) {
   var idx = 0, m;
   while ((m = re.exec(text)) !== null) {
     fragment.appendChild(document.createTextNode(text.substring(idx, m.index)));
-    var word = cloneTemplateElement('lyric-word-template');
-    word.dataset.word = m[1];
-    word.dataset.offset = String(m.index);
-    word.textContent = m[1];
-    fragment.appendChild(word);
+    fragment.appendChild(LyricWord(m[1], m.index));
     idx = m.index + m[1].length;
   }
   fragment.appendChild(document.createTextNode(text.substring(idx)));
@@ -309,15 +352,7 @@ function renderLines(lines) {
   state.player.lines = lines;
   state.player.activeIndex = -1;
   var container = document.getElementById('lrc-container');
-  var content = document.createDocumentFragment();
-  lines.forEach(function(line, i) {
-    var div = cloneTemplateElement('lrc-line-template');
-    div.dataset.index = String(i);
-    div.querySelector('.lrc-time').textContent = fmtTime(line.timeStartMs);
-    div.querySelector('.lrc-text').appendChild(buildWordNodes(line.text));
-    content.appendChild(div);
-  });
-  container.replaceChildren(content);
+  mount(container, lines.map(LyricLine));
   updateWordHighlights();
 }
 
@@ -325,19 +360,17 @@ function renderLines(lines) {
 function showPopup(word, x, y) {
   var popup = document.getElementById('dict-popup');
   state.dictionary.visibleWord = word;
-  popup.classList.add('visible');
+  ui.dictionary.word = word;
+  ui.dictionary.definition = '';
+  ui.dictionary.loading = true;
+  ui.dictionary.visible = true;
   popup.style.left = x + 'px';
   popup.style.top = y + 'px';
-  var content = cloneTemplate('dictionary-popup-template');
-  content.querySelector('.dw').textContent = word;
-  content.querySelector('.dd').hidden = true;
-  content.querySelector('.dm').textContent = 'Looking up...';
-  popup.replaceChildren(content);
 }
 
 function hidePopup() {
-  var popup = document.getElementById('dict-popup');
-  popup.classList.remove('visible');
+  ui.dictionary.visible = false;
+  ui.dictionary.loading = false;
   state.dictionary.visibleWord = '';
 }
 
@@ -354,19 +387,8 @@ function lookupWord(word, context, offset) {
     var normalized = normalizeDictionaryDefinition(definition, word);
     var displayDefinition = normalized.definition;
     if (state.dictionary.visibleWord === word) {
-      var popup = document.getElementById('dict-popup');
-      var definitionNode = popup.querySelector('.dd');
-      var messageNode = popup.querySelector('.dm');
-      if (displayDefinition) {
-        definitionNode.innerHTML = displayDefinition;
-        definitionNode.hidden = false;
-        messageNode.hidden = true;
-      } else {
-        definitionNode.replaceChildren();
-        definitionNode.hidden = true;
-        messageNode.textContent = 'No definition found';
-        messageNode.hidden = false;
-      }
+      ui.dictionary.definition = displayDefinition;
+      ui.dictionary.loading = false;
     }
     return normalized;
   });
@@ -374,8 +396,7 @@ function lookupWord(word, context, offset) {
 
 function onWordClick(el, event) {
   var word = el.getAttribute('data-word') || el.textContent.trim();
-  var popup = document.getElementById('dict-popup');
-  var shouldClosePopup = popup.classList.contains('visible') &&
+  var shouldClosePopup = ui.dictionary.visible &&
     state.dictionary.visibleWord === word && el.classList.contains('selected');
   if (shouldClosePopup) {
     hidePopup();
@@ -440,6 +461,56 @@ function onWordClick(el, event) {
   event.preventDefault();
 }
 
+function bindReactiveUi() {
+  var recent = document.getElementById('recent-dropdown');
+  var vocabulary = document.getElementById('word-panel');
+  var popup = document.getElementById('dict-popup');
+
+  mount(recent, RecentDropdown());
+  mount(vocabulary, VocabularyPanel());
+  mount(popup, DictionaryPopup());
+
+  van.derive(function() {
+    recent.classList.toggle('open', ui.recent.open);
+  });
+  van.derive(function() {
+    vocabulary.classList.toggle('open', ui.vocabulary.open);
+  });
+  van.derive(function() {
+    popup.classList.toggle('visible', ui.dictionary.visible);
+  });
+  van.derive(function() {
+    var playing = ui.player.playing;
+    document.getElementById('icon-play').style.display = playing ? 'none' : '';
+    document.getElementById('icon-pause').style.display = playing ? '' : 'none';
+    document.getElementById('btn-play').setAttribute('title', playing ? 'Pause' : 'Play');
+  });
+  van.derive(function() {
+    document.getElementById('time-duration').textContent = fmtTime(ui.player.duration);
+  });
+  van.derive(function() {
+    if (state.player.seeking) return;
+    var duration = ui.player.duration;
+    var position = ui.player.position;
+    var value = duration > 0 ? Math.round((position / duration) * 1000) : 0;
+    document.getElementById('progress-bar').value = value;
+    updateProgressTrack(value);
+    document.getElementById('time-current').textContent = fmtTime(position);
+  });
+  van.derive(function() {
+    if (state.player.volumeDragging) return;
+    var volume = ui.player.volume;
+    var volumeBar = document.getElementById('volume-bar');
+    if (Math.abs(volume - volumeBar.value) > 2) {
+      volumeBar.value = volume;
+      volumeBar.style.background = 'linear-gradient(to right, #999 0%, #999 ' + volume + '%, #404040 ' + volume + '%)';
+    }
+    updateVolumeIcon(volume);
+  });
+}
+
+bindReactiveUi();
+
 /* ── delegated collection events ── */
 var recentDropdown = document.getElementById('recent-dropdown');
 recentDropdown.addEventListener('click', function(event) {
@@ -451,7 +522,7 @@ recentDropdown.addEventListener('click', function(event) {
   var index = parseInt(item.dataset.index);
   var path = state.recent.files[index];
   if (path) sendCommand('openRecent', {path: path});
-  recentDropdown.classList.remove('open');
+  ui.recent.open = false;
 });
 
 var wordPanel = document.getElementById('word-panel');
@@ -482,7 +553,7 @@ wordPanel.addEventListener('click', function(event) {
     file: item.dataset.file,
     ms: parseInt(item.dataset.ms)
   });
-  wordPanel.classList.remove('open');
+  ui.vocabulary.open = false;
 });
 
 var lrcContainer = document.getElementById('lrc-container');
@@ -517,10 +588,10 @@ document.addEventListener('click', function(e) {
   }
   // Close dropdowns on outside click
   if (!e.target.closest('#btn-recent') && !e.target.closest('#recent-dropdown')) {
-    document.getElementById('recent-dropdown').classList.remove('open');
+    ui.recent.open = false;
   }
   if (!e.target.closest('#btn-words') && !e.target.closest('#word-panel')) {
-    document.getElementById('word-panel').classList.remove('open');
+    ui.vocabulary.open = false;
   }
 });
 
@@ -607,33 +678,19 @@ function updateState(data) {
 
   // Volume sync (initial only — don't fight user dragging)
   if (data.volume !== undefined && !state.player.volumeDragging) {
-    var vpct = Math.round(data.volume * 100);
-    var vb = document.getElementById('volume-bar');
-    if (Math.abs(vpct - vb.value) > 2) {
-      vb.value = vpct;
-      vb.style.background = 'linear-gradient(to right, #999 0%, #999 ' + vpct + '%, #404040 ' + vpct + '%)';
-    }
-    updateVolumeIcon(vpct);
+    ui.player.volume = Math.round(data.volume * 100);
   }
 
-  if (data.duration !== undefined) state.player.duration = data.duration;
+  if (data.duration !== undefined) {
+    state.player.duration = data.duration;
+    ui.player.duration = data.duration;
+  }
   if (data.playing !== undefined) {
-    var wasPlaying = state.player.playing;
     state.player.playing = data.playing;
-    if (state.player.playing !== wasPlaying) {
-      document.getElementById('icon-play').style.display = state.player.playing ? 'none' : '';
-      document.getElementById('icon-pause').style.display = state.player.playing ? '' : 'none';
-      document.getElementById('btn-play').setAttribute('title', state.player.playing ? 'Pause' : 'Play');
-    }
+    ui.player.playing = data.playing;
   }
-  document.getElementById('time-duration').textContent = fmtTime(state.player.duration);
-
-  if (!state.player.seeking) {
-    var pos = data.position || 0;
-    var val = state.player.duration > 0 ? Math.round((pos / state.player.duration) * 1000) : 0;
-    document.getElementById('progress-bar').value = val;
-    updateProgressTrack(val);
-    document.getElementById('time-current').textContent = fmtTime(pos);
+  if (data.position !== undefined && !state.player.seeking) {
+    ui.player.position = data.position;
   }
 
   if (data.recent) {
@@ -652,8 +709,8 @@ function pollState() {
 /* ── button events ── */
 document.getElementById('btn-open').onclick = function() {
   clearWordPopup();
-  document.getElementById('recent-dropdown').classList.remove('open');
-  document.getElementById('word-panel').classList.remove('open');
+  ui.recent.open = false;
+  ui.vocabulary.open = false;
   sendCommand('open');
 };
 document.getElementById('btn-recent').onclick = toggleRecentDropdown;

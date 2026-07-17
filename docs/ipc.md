@@ -3,6 +3,27 @@
 podlrc runs its frontend in a native WebView. The frontend and Nim host exchange
 JSON messages directly; there is no HTTP server or WebSocket layer.
 
+## Frontend rendering
+
+The UI uses vendored copies of VanJS 1.6.0 and VanX 0.6.3 (`src/ui/vendor/`) for
+component DOM construction and field-level reactive presentation state. They are
+embedded by `ui_assets.nim` before `app.js`, so there is no runtime network, npm,
+or bundler dependency. `app.js` keeps the stable bridge functions
+(`sendCommand`, `updateState`, `updateWordPanel`, and `resolveDictionaryLookup`)
+as the host-facing API.
+
+`updateState()` is called about every 400ms while playing. LRC lines are created
+only when the host supplies `lines`; polling must update the existing active
+line rather than rebuild the lyrics list. The recent-files menu, Vocabulary
+panel, dictionary popup, and playback controls stay mounted and react to their
+own field-level presentation state.
+
+Use `vanX.reactive()` only for presentation fields such as panel visibility,
+Vocabulary entries, popup data, and playback controls. Keep lyric lines,
+dictionary request resolvers, pending saves, drag state, and DOM references in
+plain operational state. Read a reactive subfield inside a Van binding or
+`van.derive()` callback; do not alias a nested reactive object before reading it.
+
 ## Transport
 
 The frontend sends one JSON object at a time through the centralized

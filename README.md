@@ -139,9 +139,13 @@ then enable it in Dictionary.app and move it to the top of the dictionary list.
 src/
   ui_assets.nim                    # embeds and assembles frontend assets
   ui/
-    index.html                     # player markup and native templates
+    index.html                     # player markup and embedded-script placeholders
     styles.css                     # player and vocabulary styles
-    app.js                         # frontend state and interactions
+    app.js                         # VanJS components, state, and interactions
+    vendor/
+      van-1.6.0.nomodule.min.js    # vendored MIT UI runtime (offline)
+      van-x-0.6.3.nomodule.min.js  # vendored MIT reactive state runtime
+      README.md                     # upstream source and SHA-256
   dictionary_formatters.js          # formatter registry and normalization entry
   dictionary_formatters/
     common.js                       # shared helpers and plain fallback
@@ -164,6 +168,19 @@ docs/
 
 The WebView message format, commands, state payloads, and extension workflow are
 documented in [docs/ipc.md](docs/ipc.md).
+
+### Frontend UI
+
+The frontend uses vendored [VanJS](https://vanjs.org/) 1.6.0 and VanX 0.6.3.
+They are embedded into the executable by `ui_assets.nim`, so the player never
+uses a CDN, Node.js, or a build step at runtime. Build UI with small component
+functions and native DOM nodes from `van.tags`; use `vanX.reactive()` for
+field-level presentation state. JSX is not used.
+
+Keep the LRC list stable after a file loads. The 400ms playback update must only
+change the active lyric line, position, and playback controls. Rebuilding all
+lyrics during polling breaks scroll position, word selection, and dictionary
+popups.
 
 ### Build
 
