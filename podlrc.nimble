@@ -1,4 +1,4 @@
-version       = "0.1.2"
+version       = "0.1.3"
 author        = "geohuz"
 description   = "Minimal Podcast Player for macOS"
 license       = "MIT"
