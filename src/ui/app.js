@@ -736,6 +736,7 @@ function onWordClick(el, event) {
           word: word,
           definition: normalized.definition,
           source: normalized.source,
+          file: app.runtime.player.currentFile,
           timeMs: timeMs
         });
       });

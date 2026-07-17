@@ -37,6 +37,7 @@ block assembles_embedded_player:
   doAssert "id: 'audio-player'" in html
   doAssert "function loadAudio(path, position)" in html
   doAssert "sendCommand('savePlaybackState'" in html
+  doAssert "file: app.runtime.player.currentFile" in html
   doAssert "app.runtime.player.audio.currentTime = lyric.timeStartMs / 1000" in html
   doAssert "setInterval(persistPlaybackPosition, 5000)" in html
   doAssert "sendCommand('seek'" notin html
