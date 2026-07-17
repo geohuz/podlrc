@@ -10,6 +10,8 @@ const RecentPath = DataDir / "recent.json"
 const ConfigPath = DataDir / "config.json"
 const WordsPath = DataDir / "words.json"
 const MaxRecent = 20
+const DefaultWindowWidth = 800
+const DefaultWindowHeight = 600
 
 proc loadRecent(): seq[string] =
   if fileExists(RecentPath):
@@ -59,6 +61,20 @@ proc saveConfig(lrcSize: int, lastFile = "", lastPosMs: int64 = 0) =
     cfg["lastFile"] = %lastFile
     cfg["lastPosMs"] = %lastPosMs
   writeFile(ConfigPath, $cfg)
+
+proc saveWindowSize(width, height: int) =
+  createDir(DataDir)
+  var cfg = loadConfig()
+  cfg["windowWidth"] = %clamp(width, 480, 4000)
+  cfg["windowHeight"] = %clamp(height, 360, 3000)
+  writeFile(ConfigPath, $cfg)
+
+proc loadWindowSize(cfg: JsonNode): tuple[width, height: int] =
+  result = (DefaultWindowWidth, DefaultWindowHeight)
+  if cfg.hasKey("windowWidth") and cfg["windowWidth"].kind == JInt:
+    result.width = clamp(cfg["windowWidth"].getInt(), 480, 4000)
+  if cfg.hasKey("windowHeight") and cfg["windowHeight"].kind == JInt:
+    result.height = clamp(cfg["windowHeight"].getInt(), 360, 3000)
 
 proc savePlaybackState(path: string, posMs: int64) =
   createDir(DataDir)
@@ -385,6 +401,9 @@ proc handleMessage(w: Webview, arg: string) =
     of "saveConfig":
       if msg.hasKey("lrcSize"):
         saveConfig(msg["lrcSize"].getInt())
+      if msg.hasKey("windowWidth") and msg.hasKey("windowHeight"):
+        saveWindowSize(
+          msg["windowWidth"].getInt(), msg["windowHeight"].getInt())
 
     of "lookupWord":
       var response = newJObject()
@@ -460,7 +479,10 @@ proc main() =
     gPendingResumeFile.extractFilename()
   else:
     "podcast player"
-  var w = newWebView(windowTitle, url, 800, 600, true, false, handleMessage)
+  let windowSize = loadWindowSize(cfg)
+  var w = newWebView(
+    windowTitle, url, windowSize.width, windowSize.height,
+    true, false, handleMessage)
   if w.isNil:
     echo "Failed to create webview"
     quit(1)

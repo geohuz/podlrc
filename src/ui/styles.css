@@ -10,6 +10,7 @@
   --font-ui: -apple-system, 'SF Pro Text', 'Segoe UI', sans-serif;
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
+#title-bar-host, #content-host, #dictionary-popup-host, #playbar-host { display: contents; }
 body {
   background: var(--bg); color: var(--text);
   font-family: var(--font-ui); height: 100vh;
@@ -275,7 +276,7 @@ body {
 }
 #progress-bar:hover::-webkit-slider-thumb,
 #progress-bar:active::-webkit-slider-thumb,
-body.seeking #progress-bar::-webkit-slider-thumb { opacity: 1; }
+#playbar.seeking #progress-bar::-webkit-slider-thumb { opacity: 1; }
 
 #volume-container {
   display: flex; align-items: center; gap: 6px;
@@ -294,7 +295,7 @@ body.seeking #progress-bar::-webkit-slider-thumb { opacity: 1; }
 }
 #volume-bar:hover::-webkit-slider-thumb,
 #volume-bar:active::-webkit-slider-thumb,
-body.volume-dragging #volume-bar::-webkit-slider-thumb { opacity: 1; }
+#playbar.volume-dragging #volume-bar::-webkit-slider-thumb { opacity: 1; }
 .time-label {
   font-family: 'SF Mono', 'Menlo', monospace; font-size: 11px;
   color: var(--text-dim); min-width: 38px; text-align: center;

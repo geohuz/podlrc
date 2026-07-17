@@ -18,11 +18,12 @@ line rather than rebuild the lyrics list. The recent-files menu, Vocabulary
 panel, dictionary popup, and playback controls stay mounted and react to their
 own field-level presentation state.
 
-Use `vanX.reactive()` only for presentation fields such as panel visibility,
-Vocabulary entries, popup data, and playback controls. Keep lyric lines,
-dictionary request resolvers, pending saves, drag state, and DOM references in
-plain operational state. Read a reactive subfield inside a Van binding or
-`van.derive()` callback; do not alias a nested reactive object before reading it.
+The frontend has one `app = vanX.reactive(...)` state root. Presentation fields
+such as panel visibility, Vocabulary entries, popup data, and playback controls
+are reactive. `app.runtime` is wrapped with `vanX.noreactive()` and holds lyric
+lines, dictionary request resolvers, pending saves, timers, and other operational
+state. Read reactive subfields inside Van binding functions; do not alias a
+nested reactive object before reading it.
 
 ## Transport
 
@@ -66,7 +67,7 @@ Every message requires a string `cmd` field.
 | `seekBack` | none | Seeks backward 10 seconds | None |
 | `seekFwd` | none | Seeks forward 10 seconds | None |
 | `setVolume` | `vol: float` | Sets volume using the `0.0..1.0` scale | None |
-| `saveConfig` | `lrcSize?: int` | Persists supported UI settings | None |
+| `saveConfig` | `lrcSize?: int`, `windowWidth?: int`, `windowHeight?: int` | Persists supported UI settings | None |
 | `lookupWord` | `id: int`, `word: string`, `context?: string`, `offset?: int` | Queries macOS Dictionary; context lookup is used only when both optional fields are present | `resolveDictionaryLookup()` |
 | `addWord` | `word: string`, `timeMs: int`, `definition?: string`, `source?: string`, `file?: string` | Adds or updates a vocabulary entry; `file` defaults to the current audio file | `updateWordPanel()` |
 | `removeWord` | `word: string` | Removes the word case-insensitively | `updateWordPanel()` |
